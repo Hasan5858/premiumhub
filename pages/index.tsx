@@ -1,0 +1,439 @@
+"use client"
+
+import type React from "react"
+import { useState, useEffect } from "react"
+import Link from "next/link"
+import { Play, Clock, ChevronRight, Star, Sparkles, TrendingUp } from "lucide-react"
+import HeroSection from "@/components/HeroSection"
+import CreatorCard from "@/components/CreatorCard"
+import { fetchLatestWebseries, fetchCreators, fetchCategories } from "@/services/api"
+import type { WebseriesPost, Creator, Category } from "@/types"
+import PremiumBadge from "@/components/PremiumBadge"
+import { useAuth } from "@/contexts/AuthContext"
+import { useSidebar } from "@/contexts/SidebarContext"
+import { hasCacheItem } from "@/services/cache"
+
+const ViewAllButton = ({ to, children }: { to: string; children: React.ReactNode }) => (
+  <Link 
+    href={to} 
+    className="group relative overflow-hidden px-2 py-1 sm:px-3 sm:py-1.5 md:px-4 md:py-2 text-xs sm:text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-purple-700 rounded-full transition-all duration-300 hover:from-purple-500 hover:to-purple-600 hover:shadow-lg hover:shadow-purple-500/25 flex items-center"
+  >
+    <span className="relative z-10 flex items-center">
+      <span className="hidden sm:inline">{children}</span>
+      <span className="sm:hidden">View All</span>
+      <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 ml-1 transition-transform group-hover:translate-x-0.5" />
+    </span>
+    <div className="absolute inset-0 bg-gradient-to-r from-purple-400 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+  </Link>
+)
+
+const SectionTitle = ({ 
+  title, 
+  subtitle, 
+  icon: Icon 
+}: { 
+  title: string; 
+  subtitle?: string; 
+  icon?: any 
+}) => (
+  <div className="flex flex-col space-y-1">
+    <div className="flex items-center space-x-2 sm:space-x-3">
+      <div className="relative">
+        <div className="w-1 h-6 sm:h-8 bg-gradient-to-b from-purple-400 to-purple-600 rounded-full" />
+        <div className="absolute -top-1 -left-1 w-2 h-2 sm:w-3 sm:h-3 bg-purple-400 rounded-full animate-pulse" />
+      </div>
+      {Icon && <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" />}
+      <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-white bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+        {title}
+      </h2>
+    </div>
+    {subtitle && (
+      <p className="text-xs sm:text-sm text-gray-400 ml-6">{subtitle}</p>
+    )}
+  </div>
+)
+
+export default function HomePage() {
+  const [webseries, setWebseries] = useState<WebseriesPost[]>([])
+  const [creators, setCreators] = useState<Creator[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const { user } = useAuth()
+  const { isCollapsed } = useSidebar()
+
+  // Get responsive grid classes based on sidebar state
+  const getGridClasses = () => {
+    if (isCollapsed) {
+      // When sidebar is collapsed, show more items
+      return "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7 gap-6"
+    } else {
+      // When sidebar is expanded, show 4 items max
+      return "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
+    }
+  }
+
+  // Check if user has premium access
+  const hasPremiumAccess =
+    user &&
+    (user.membership_status === "monthly" ||
+      user.membership_status === "3month" ||
+      user.membership_status === "halfyearly" ||
+      user.membership_status === "yearly" ||
+      user.membership_status === "admin")
+
+  const loadData = async () => {
+    // Check if we have cached data for all sections before showing loading indicator
+    const hasWebseriesCache = hasCacheItem('latest-webseries-page-1');
+    const hasCreatorsCache = hasCacheItem('creators-in-page-1');
+    const hasCategoriesCache1 = hasCacheItem('categories-page-1');
+    const hasCategoriesCache2 = hasCacheItem('categories-page-2');
+    
+    // Only show loading indicator if we don't have cached data
+    const shouldShowLoading = !(hasWebseriesCache && hasCreatorsCache && hasCategoriesCache1 && hasCategoriesCache2);
+    
+    if (shouldShowLoading) {
+      setLoading(true);
+    }
+    
+    try {
+      setError(null)
+      let hasError = false
+
+      // Load each data type independently so if one fails, the others can still load
+      try {
+        const webseriesData = await fetchLatestWebseries()
+        setWebseries(webseriesData.posts || webseriesData.webseries || [])
+      } catch (err) {
+        console.error("Error loading webseries:", err)
+        hasError = true
+      }
+
+      try {
+        const creatorsData = await fetchCreators("in")
+        setCreators(creatorsData.creators.slice(0, 8))
+      } catch (err) {
+        console.error("Error loading creators:", err)
+        hasError = true
+      }
+
+      try {
+        // Fetch categories from page 1
+        const categoriesPage1 = await fetchCategories(1)
+        
+        // Fetch categories from page 2
+        const categoriesPage2 = await fetchCategories(2)
+        
+        // Combine categories from both pages
+        const allCategories = [
+          ...categoriesPage1.categories,
+          ...categoriesPage2.categories
+        ]
+        
+        // Set all categories
+        setCategories(allCategories)
+      } catch (err) {
+        console.error("Error loading categories:", err)
+        hasError = true
+      }
+
+      // Only show error if there was an actual error AND all data types failed to load
+      if (hasError && webseries.length === 0 && creators.length === 0 && categories.length === 0) {
+        setError("Failed to load content. Please try again later.")
+      }
+    } catch (err) {
+      console.error("Error loading content:", err)
+      setError("Failed to load content. Please try again later.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  // Transform webseries posts to VideoCard format
+  const transformedWebseries = webseries.map((post) => ({
+    id: post.id,
+    title: post.title,
+    thumbnail: post.thumbnail,
+    duration: post.duration,
+    year: new Date().getFullYear(),
+    category: post.quality,
+    link: post.link,
+  }))
+
+  // Get the first webseries for hero section
+  const heroWebseries = webseries[0] && {
+    id: webseries[0].id,
+    title: webseries[0].title,
+    description: webseries[0].title,
+    backdropImage: webseries[0].thumbnail,
+    year: new Date().getFullYear(),
+    duration: webseries[0].duration,
+    category: webseries[0].quality || "HD", // Provide a default value to avoid undefined
+    link: webseries[0].link,
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900">
+      {/* Ambient Background Effects */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse delay-1000" />
+      </div>
+
+      <div className="relative z-10">
+        {/* Hero Section with Enhanced Overlay */}
+        {heroWebseries && (
+          <Link href={heroWebseries.link}>
+            <div className="relative overflow-hidden">
+              <HeroSection {...heroWebseries} />
+              {/* Enhanced gradient overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent" />
+              {!hasPremiumAccess && <PremiumBadge className="top-6 left-6 text-sm px-3 py-1.5 bg-gradient-to-r from-yellow-400 to-orange-500" />}
+            </div>
+          </Link>
+        )}
+
+        {/* Error Message with Modern Design */}
+        {error && (
+          <div className="container mx-auto px-4 py-4">
+            <div className="bg-gradient-to-r from-red-500/10 to-red-600/10 border border-red-500/20 backdrop-blur-sm text-red-300 px-6 py-4 rounded-2xl relative overflow-hidden" role="alert">
+              <div className="absolute inset-0 bg-gradient-to-r from-red-500/5 to-red-600/5" />
+              <div className="relative z-10">
+                <strong className="font-bold">Connection Issue: </strong> 
+                <span className="block sm:inline">{error}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Latest Webseries with Enhanced Design */}
+        <section className="py-6 sm:py-8 md:py-12 relative">
+          <div className="container mx-auto px-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
+              <SectionTitle 
+                title="Latest Webseries" 
+                subtitle="Discover the newest content just for you"
+                icon={Sparkles}
+              />
+              <ViewAllButton to="/webseries">View All Webseries</ViewAllButton>
+            </div>
+
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <div className="relative">
+                  <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-200 border-t-purple-600"></div>
+                  <div className="absolute inset-0 rounded-full border-4 border-purple-400/20"></div>
+                </div>
+              </div>
+            ) : webseries.length > 0 ? (
+              <div className={getGridClasses()}>
+                {transformedWebseries.map((video, index) => (
+                  <Link
+                    key={video.id}
+                    href={video.link}
+                    className="group relative flex flex-col bg-gradient-to-br from-gray-800/60 to-gray-900/60 backdrop-blur-sm rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.03] hover:bg-gradient-to-br hover:from-gray-700/60 hover:to-gray-800/60 shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/30 border border-gray-700/30 hover:border-purple-500/30"
+                    style={{ 
+                      animationDelay: `${index * 100}ms`,
+                      animation: 'fadeInUp 0.6s ease-out forwards'
+                    }}
+                  >
+                    <div className="aspect-video w-full relative overflow-hidden">
+                      <img
+                        src={video.thumbnail || "/api/placeholder?height=400&width=600&query=movie%20scene"}
+                        alt={video.title}
+                        className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-90 group-hover:brightness-100"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.onerror = null
+                          target.src = "/api/placeholder?height=400&width=600&query=movie%20scene"
+                        }}
+                      />
+
+                      {/* Enhanced gradient overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
+
+                      {/* Premium badge if not premium user */}
+                      {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
+
+                      {/* Enhanced play button overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500">
+                        <div className="relative">
+                          <div className="w-16 h-16 bg-gradient-to-r from-purple-600 to-purple-700 backdrop-blur-lg rounded-full flex items-center justify-center transform scale-75 group-hover:scale-100 transition-all duration-500 shadow-2xl shadow-purple-600/50 border-2 border-white/20">
+                            <Play className="w-8 h-8 text-white fill-current ml-1" />
+                          </div>
+                          <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-400 to-purple-500 opacity-20 animate-ping"></div>
+                        </div>
+                      </div>
+
+                      {/* Enhanced duration badge */}
+                      <div className="absolute bottom-3 right-3 bg-black/90 backdrop-blur-md text-white text-xs px-3 py-1.5 rounded-full flex items-center shadow-xl border border-white/10">
+                        <Clock size={12} className="mr-1.5 text-purple-400" />
+                        {video.duration}
+                      </div>
+                    </div>
+
+                    <div className="p-4 flex-grow flex flex-col">
+                      <h3 className="font-semibold text-white line-clamp-2 group-hover:text-purple-300 transition-colors duration-300 leading-tight">
+                        {video.title}
+                      </h3>
+
+                      <div className="flex items-center justify-between mt-3">
+                        <span className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-3 py-1 rounded-full text-xs font-medium shadow-lg">
+                          {video.category}
+                        </span>
+                        <div className="flex items-center text-yellow-400">
+                          <Star size={12} className="fill-current" />
+                          <span className="text-xs ml-1 text-gray-300">NEW</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="bg-gradient-to-r from-gray-800/40 to-gray-900/40 backdrop-blur-sm rounded-2xl p-8 border border-gray-700/30">
+                  <p className="text-gray-400">No webseries available at the moment.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Categories with Modern Grid Design */}
+        <section className="py-6 sm:py-8 md:py-12 relative">
+          <div className="container mx-auto px-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
+              <SectionTitle 
+                title="Popular Categories" 
+                subtitle="Explore content by your favorite genres"
+                icon={TrendingUp}
+              />
+              <ViewAllButton to="/categories">View All Categories</ViewAllButton>
+            </div>
+
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <div className="relative">
+                  <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-200 border-t-purple-600"></div>
+                  <div className="absolute inset-0 rounded-full border-4 border-purple-400/20"></div>
+                </div>
+              </div>
+            ) : categories.length > 0 ? (
+              <div className={getGridClasses()}>
+                {categories.map((category, index) => (
+                  <Link
+                    key={category.slug}
+                    href={`/category/${category.slug}`}
+                    className="group relative aspect-square rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.05] shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/40 border border-gray-700/30 hover:border-purple-500/50"
+                    style={{ 
+                      animationDelay: `${index * 80}ms`,
+                      animation: 'fadeInUp 0.6s ease-out forwards'
+                    }}
+                  >
+                    <img
+                      src={
+                        category.imageUrl ||
+                        `/api/placeholder?height=400&width=400&query=${encodeURIComponent(category.name) || "category"}%20videos`
+                      }
+                      alt={category.name}
+                      className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-75 group-hover:brightness-90"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement
+                        target.onerror = null
+                        target.src = `/api/placeholder?height=400&width=400&query=${encodeURIComponent(
+                          category.name,
+                        )}%20videos`
+                      }}
+                    />
+
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent opacity-80 group-hover:opacity-60 transition-opacity duration-500" />
+
+                    {/* Premium badge if not premium user */}
+                    {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
+
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+                      <h3 className="text-sm sm:text-lg font-bold text-white group-hover:text-purple-300 transition-colors duration-300 mb-2">
+                        {category.name}
+                      </h3>
+                      <div className="bg-gradient-to-r from-purple-600/90 to-purple-700/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-medium shadow-lg border border-white/20">
+                        {category.videoCount.toLocaleString()} videos
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+
+                {/* Enhanced View All Categories Card */}
+                <Link
+                  href="/categories"
+                  className="group relative aspect-square rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.05] bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-sm flex items-center justify-center shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/40 border border-purple-500/30 hover:border-purple-400/50"
+                >
+                  <div className="text-center">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-purple-600 to-purple-700 rounded-full flex items-center justify-center mx-auto mb-3 transform group-hover:scale-110 transition-transform duration-300 shadow-lg shadow-purple-600/50">
+                      <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300">
+                      View All
+                    </h3>
+                  </div>
+                </Link>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <div className="bg-gradient-to-r from-gray-800/40 to-gray-900/40 backdrop-blur-sm rounded-2xl p-8 border border-gray-700/30">
+                  <p className="text-gray-400">No categories available at the moment.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Latest Creators - Fixed to preserve original design */}
+        <section className="py-6 sm:py-8">
+          <div className="container mx-auto px-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-3 sm:gap-0">
+              <h2 className="text-xl font-bold text-white flex items-center">
+                <span className="w-1 h-8 bg-purple-500 rounded-full inline-block mr-3"></span>
+                Featured Creators
+              </h2>
+              <ViewAllButton to="/creators">View All Creators</ViewAllButton>
+            </div>
+
+            {loading ? (
+              <div className="flex justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+              </div>
+            ) : creators.length > 0 ? (
+              <div className={getGridClasses()}>
+                {creators.map((creator) => (
+                  <CreatorCard key={creator.slug} creator={creator} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-400">No creators available at the moment.</div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* Add CSS Animation Styles */}
+      <style jsx>{`
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+    </div>
+  )
+}
