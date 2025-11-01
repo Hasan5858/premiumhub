@@ -3,8 +3,6 @@ import type { NextApiRequest, NextApiResponse } from "next"
 // Define environment variables for API endpoints without fallbacks
 const API_ENDPOINTS = {
   categories: process.env.CATEGORY_API_URL,
-  creators: process.env.CREATOR_API_URL,
-  creatorsList: process.env.API_BASE_URL,
   webseries: process.env.WEBSERIES_API_URL,
   search: process.env.SEARCH_API_URL,
   auth: process.env.AUTH_API_URL,
@@ -12,30 +10,27 @@ const API_ENDPOINTS = {
   player: process.env.PLAYER_API_URL,
 }
 
-// Add validation for required environment variables
-const validateEnvironmentVariables = () => {
-  const missingVars = Object.entries(API_ENDPOINTS)
-    .filter(([_, value]) => !value)
-    .map(([key]) => key)
-
-  if (missingVars.length > 0) {
-    console.error(`Missing required environment variables: ${missingVars.join(", ")}`)
+// Validate environment variable for a specific service
+const validateServiceEnvironmentVariable = (service: string): boolean => {
+  // Check if service exists in our API endpoints
+  if (!(service in API_ENDPOINTS)) {
+    // Service doesn't exist in our list - might be invalid service
     return false
   }
+  
+  const serviceUrl = API_ENDPOINTS[service as keyof typeof API_ENDPOINTS]
+  
+  // Check if the environment variable is set
+  if (!serviceUrl) {
+    console.error(`Missing required environment variable for service "${service}": ${service.toUpperCase()}_API_URL`)
+    return false
+  }
+  
   return true
 }
 
-// Update the proxy handler to correctly handle the URL format for the creators list API
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    // Validate environment variables
-    if (!validateEnvironmentVariables()) {
-      return res.status(500).json({
-        error: "Server configuration error",
-        message: "API endpoints not properly configured. Please check server environment variables.",
-      })
-    }
-
     // Get the path and service from the request
     const { path } = req.query
 
@@ -48,23 +43,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // The rest of the path is the actual endpoint
     const endpoint = path.slice(1).join("/")
 
+    // Validate environment variable only for the service being requested
+    if (!validateServiceEnvironmentVariable(service)) {
+      return res.status(500).json({
+        error: "Server configuration error",
+        message: `API endpoint for service "${service}" not properly configured. Please check ${service.toUpperCase()}_API_URL environment variable.`,
+      })
+    }
+
     // Get the base URL for the service
     const baseUrl = getServiceUrl(service)
     if (!baseUrl) {
       return res.status(400).json({ error: "Invalid service" })
     }
 
-    // Special handling for creatorsList service which has a different URL structure
-    let url
-    if (service === "creatorsList") {
-      // For creatorsList, the endpoint is a full URL that needs to be appended to the base URL
-      // First, decode the endpoint if it's URL encoded
-      const decodedEndpoint = decodeURIComponent(endpoint)
-      url = `${baseUrl}/${decodedEndpoint}`
-    } else {
-      // For other services, construct the URL normally
-      url = `${baseUrl}/${endpoint}`
-    }
+    // Construct the URL for the service
+    const url = `${baseUrl}/${endpoint}`
 
     console.log(`[API Proxy] Forwarding request to: ${url}`)
 

@@ -1,37 +1,35 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 
 type NavigationState = {
   webseriesPage: number;
-  creatorPage: {
-    [slug: string]: number; // Store page number for each creator by slug
-  };
   categoryPage: {
     [slug: string]: number; // Store page number for each category by slug
   };
+  providerPage: number;
   // We can add more page tracking here later for other sections
 };
 
 type NavigationContextType = {
   navigationState: NavigationState;
   setWebseriesPage: (page: number) => void;
-  setCreatorPage: (slug: string, page: number) => void;
   setCategoryPage: (slug: string, page: number) => void;
+  setProviderPage: (page: number) => void;
   // Add more setters for other sections when needed
 };
 
 const initialState: NavigationState = {
   webseriesPage: 1,
-  creatorPage: {},
   categoryPage: {},
+  providerPage: 1,
 };
 
 const NavigationContext = createContext<NavigationContextType>({
   navigationState: initialState,
   setWebseriesPage: () => {},
-  setCreatorPage: () => {},
   setCategoryPage: () => {},
+  setProviderPage: () => {},
 });
 
 export const useNavigation = () => useContext(NavigationContext);
@@ -54,24 +52,14 @@ export const NavigationProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   }, [navigationState]);
 
-  const setWebseriesPage = (page: number) => {
+  const setWebseriesPage = useCallback((page: number) => {
     setNavigationState((prev) => ({
       ...prev,
       webseriesPage: page,
     }));
-  };
+  }, []);
 
-  const setCreatorPage = (slug: string, page: number) => {
-    setNavigationState((prev) => ({
-      ...prev,
-      creatorPage: {
-        ...prev.creatorPage,
-        [slug]: page,
-      },
-    }));
-  };
-
-  const setCategoryPage = (slug: string, page: number) => {
+  const setCategoryPage = useCallback((slug: string, page: number) => {
     setNavigationState((prev) => ({
       ...prev,
       categoryPage: {
@@ -79,15 +67,28 @@ export const NavigationProvider: React.FC<{ children: ReactNode }> = ({ children
         [slug]: page,
       },
     }));
-  };
+  }, []);
 
-  const value = {
+  const setProviderPage = useCallback((page: number) => {
+    setNavigationState((prev) => {
+      // Only update if the page actually changed
+      if (prev.providerPage === page) {
+        return prev;
+      }
+      return {
+        ...prev,
+        providerPage: page,
+      };
+    });
+  }, []);
+
+  const value = useMemo(() => ({
     navigationState,
     setWebseriesPage,
-    setCreatorPage,
     setCategoryPage,
+    setProviderPage,
     // Add more setters as needed
-  };
+  }), [navigationState, setWebseriesPage, setCategoryPage, setProviderPage]);
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;
 }; 

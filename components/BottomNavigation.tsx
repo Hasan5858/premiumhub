@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { Home, Film, Crown, Search, UserCircle, Users } from "lucide-react"
+import { Home, Film, Crown, Search, UserCircle, Server } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 
 const BottomNavigation = () => {
@@ -20,19 +20,19 @@ const BottomNavigation = () => {
       href: "/categories",
       icon: Film,
       label: "Categories",
-      isActive: pathname === "/categories" || pathname.startsWith("/category/")
+      isActive: pathname === "/categories" || (pathname && pathname.startsWith("/category/"))
     },
     {
       href: "/webseries",
       icon: Crown,
       label: "Webseries",
-      isActive: pathname === "/webseries" || pathname.startsWith("/webseries/")
+      isActive: pathname === "/webseries" || (pathname && pathname.startsWith("/webseries/"))
     },
     {
-      href: "/creators",
-      icon: Users,
-      label: "Creators",
-      isActive: pathname === "/creators" || pathname.startsWith("/creator/")
+      href: "/provider/indianpornhq",
+      icon: Server,
+      label: "Providers",
+      isActive: pathname && pathname.startsWith("/provider/")
     },
     {
       href: user ? "/profile" : "/login",

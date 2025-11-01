@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { PlayCircle, Home, Film, Crown, LogIn, LogOut, Settings, User, UserCircle } from "lucide-react"
+import { PlayCircle, Home, Film, LogIn, LogOut, Settings, User, UserCircle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { logout } from "@/services/auth"
 
@@ -55,21 +55,14 @@ const Navbar = () => {
             </Link>
             <Link
               href="/categories"
-              className={`nav-link ${pathname === "/categories" || pathname.startsWith("/category/") ? "text-purple-400" : ""}`}
+              className={`nav-link ${pathname === "/categories" || (pathname && pathname.startsWith("/category/")) ? "text-purple-400" : ""}`}
             >
               <Film size={18} className="mr-1" />
               <span>Categories</span>
             </Link>
             <Link
-              href="/creators"
-              className={`nav-link ${pathname === "/creators" || pathname.startsWith("/creator/") ? "text-purple-400" : ""}`}
-            >
-              <Crown size={18} className="mr-1" />
-              <span>Creators</span>
-            </Link>
-            <Link
               href="/webseries"
-              className={`nav-link ${pathname === "/webseries" || pathname.startsWith("/webseries/") ? "text-purple-400" : ""}`}
+              className={`nav-link ${pathname === "/webseries" || (pathname && pathname.startsWith("/webseries/")) ? "text-purple-400" : ""}`}
             >
               <Film size={18} className="mr-1" />
               <span>Webseries</span>

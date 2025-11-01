@@ -5,10 +5,9 @@ import { useRouter } from "next/router"
 import Head from "next/head"
 import { ArrowLeft, Clock, Eye, Lock, Film, User, Tag, ChevronUp, ChevronDown } from "lucide-react"
 import Link from "next/link"
-import { fetchWebseriesDetails, fetchLatestWebseries, fetchCreators } from "@/services/api"
+import { fetchWebseriesDetails, fetchLatestWebseries } from "@/services/api"
 import { useNavigation } from "@/contexts/NavigationContext"
 import MembershipCheck from "@/components/MembershipCheck"
-import CreatorCard from "@/components/CreatorCard"
 import type { WebseriesDetails } from "@/types"
 
 // Define an extended interface for our processed video data
@@ -27,7 +26,6 @@ export default function WebseriesVideoPage() {
 
   const [videoData, setVideoData] = useState<ProcessedVideoData | null>(null)
   const [relatedSeries, setRelatedSeries] = useState<any[]>([])
-  const [creators, setCreators] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showTags, setShowTags] = useState(false)
@@ -106,17 +104,6 @@ export default function WebseriesVideoPage() {
           setRelatedSeries(filteredPosts.slice(0, 6))
         }
 
-        // Fetch random creators for the sidebar
-        // Use a random country code from this list
-        const countries = ["us", "in", "gb", "ca", "au", "fr", "de", "jp", "br", "mx"]
-        const randomCountry = countries[Math.floor(Math.random() * countries.length)]
-        const randomCreatorPage = Math.floor(Math.random() * 3) + 1
-
-        const creatorsData = await fetchCreators(randomCountry, randomCreatorPage)
-        if (creatorsData && creatorsData.creators) {
-          // Take 4 creators for the sidebar
-          setCreators(creatorsData.creators.slice(0, 4))
-        }
       } catch (err) {
         console.error("Error loading video:", err)
         setError("Failed to load video. Please try again later.")
@@ -246,42 +233,6 @@ export default function WebseriesVideoPage() {
                     </div>
                   </div>
 
-                  {/* Sidebar with creators - desktop only */}
-                  <div className="hidden lg:block lg:w-1/4 bg-gray-800/50 p-4">
-                    <div className="mb-4 flex items-center">
-                      <User size={18} className="mr-2 text-purple-400" />
-                      <h3 className="text-lg font-semibold text-white">Popular Creators</h3>
-                    </div>
-                    <div className="space-y-4">
-                      {creators.map((creator, index) => (
-                        <Link
-                          key={index}
-                          href={`/creator/${creator.slug}`}
-                          className="flex items-center p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
-                        >
-                          <div className="w-12 h-12 rounded-full overflow-hidden mr-3 flex-shrink-0">
-                            <img
-                              src={creator.avatarUrl || "/api/placeholder?height=100&width=100&query=creator"}
-                              alt={creator.name}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement
-                                target.onerror = null
-                                target.src = "/api/placeholder?height=100&width=100&query=creator"
-                              }}
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-white font-medium truncate">{creator.name}</h4>
-                            <div className="flex items-center text-xs text-gray-400">
-                              <Film size={12} className="mr-1" />
-                              <span>{creator.stats.videoCount} videos</span>
-                            </div>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
                 </div>
 
                 {/* Video description */}
@@ -353,17 +304,6 @@ export default function WebseriesVideoPage() {
                 </div>
               )}
 
-              {/* Mobile-only creators section */}
-              {creators.length > 0 && (
-                <div className="mt-8 lg:hidden">
-                  <h2 className="text-xl font-bold text-white mb-4">Popular Creators</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    {creators.map((creator, index) => (
-                      <CreatorCard key={index} creator={creator} />
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           ) : (
             <div className="text-center py-12 bg-gray-800 rounded-lg">

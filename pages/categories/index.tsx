@@ -31,7 +31,7 @@ export default function CategoriesPage() {
       setCategories(data.categories)
 
       // Set pagination data
-      setCurrentPage(data.pagination?.currentPage || page)
+      setCurrentPage(page) // Always use the requested page number
       setTotalPages(data.pagination?.totalPages || 1)
       setHasNextPage(data.pagination?.hasNextPage || false)
     } catch (err) {
@@ -46,9 +46,26 @@ export default function CategoriesPage() {
     loadCategories(currentPage)
   }, [currentPage])
 
+  // URL updates for categories (if needed)
+  useEffect(() => {
+    if (currentPage > 1) {
+      window.history.replaceState(null, '', `/categories?page=${currentPage}`)
+    } else {
+      window.history.replaceState(null, '', '/categories')
+    }
+  }, [currentPage])
+
   const handlePageChange = (page: number) => {
     if (page < 1 || page > totalPages) return
-    setCurrentPage(page)
+    
+    // Always reload data when changing pages, even if it's the same page
+    if (page !== currentPage) {
+      setCurrentPage(page)
+    } else {
+      // If clicking the same page, force reload the data
+      loadCategories(page)
+    }
+    
     // Scroll to top when changing pages
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -150,6 +167,9 @@ export default function CategoriesPage() {
                     pageNum = currentPage - 2 + i
                   }
 
+                  // Ensure pageNum is valid
+                  if (pageNum < 1 || pageNum > totalPages) return null
+
                   return (
                     <button
                       key={pageNum}
@@ -176,6 +196,20 @@ export default function CategoriesPage() {
                     >
                       {totalPages}
                     </button>
+                  </>
+                )}
+
+                {/* Always show page 1 if not already visible and we're not on first few pages */}
+                {totalPages > 5 && currentPage > 3 && (
+                  <>
+                    <button
+                      onClick={() => handlePageChange(1)}
+                      disabled={loading}
+                      className="w-10 h-10 rounded-lg bg-gray-800/70 text-white hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      1
+                    </button>
+                    <span className="text-gray-500">...</span>
                   </>
                 )}
               </div>

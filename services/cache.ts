@@ -1,11 +1,91 @@
+// Cache version - increment this when you want to invalidate all cache
+// Change this version number whenever you make changes that require cache invalidation
+// IMPORTANT: Cache is GLOBAL and shared by all users. Only user-specific data (auth tokens, user preferences) 
+// should be stored separately. All content cache (videos, categories, etc.) is global.
+const CACHE_VERSION = 'v2.4.0'
+const CACHE_VERSION_KEY = 'cache_version'
+
+// Development mode: Set to true to disable caching completely in development
+const DISABLE_CACHE_IN_DEV = typeof window !== 'undefined' && 
+  process.env.NODE_ENV === 'development' && 
+  (typeof window !== 'undefined' && localStorage.getItem('disable_cache') === 'true')
+
 // Define default cache expiration times (in milliseconds)
 const DEFAULT_CACHE_TIME = 15 * 60 * 1000; // 15 minutes
 const CACHE_TIMES = {
   categories: 30 * 60 * 1000, // 30 minutes
   webseries: 30 * 60 * 1000,  // 30 minutes
-  creators: 60 * 60 * 1000,   // 1 hour
   videos: 15 * 60 * 1000,     // 15 minutes
+  indianpornhq: 60 * 60 * 1000, // 1 hour - for IndianPornHQ provider data
 };
+
+/**
+ * Initialize and check cache version - should be called on app mount
+ * This runs regardless of user authentication status to ensure cache is shared globally
+ */
+export function initializeCache(): void {
+  if (typeof window === 'undefined') return;
+  
+  const storedVersion = localStorage.getItem(CACHE_VERSION_KEY)
+  
+  // Check if cache should be cleared
+  let shouldClearCache = false
+  let clearReason = ''
+  
+  if (!storedVersion || storedVersion !== CACHE_VERSION) {
+    shouldClearCache = true
+    clearReason = `Version changed from ${storedVersion || 'none'} to ${CACHE_VERSION}`
+  }
+  
+  if (shouldClearCache) {
+    console.log(`[Cache] ${clearReason}. Clearing all cache.`)
+    console.log(`[Cache] Note: Cache is shared globally - not user-specific.`)
+    try {
+      // Get all keys
+      const keysToRemove: string[] = []
+      const keysToKeep: string[] = []
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (!key) continue
+        
+        // Only keep auth/user-related keys - all other cache is global and should be cleared
+        if (key.startsWith('auth_') || 
+            key === 'user' ||
+            key.startsWith('current_device') ||
+            key.startsWith('refresh_token') ||
+            key === CACHE_VERSION_KEY ||
+            key === 'disable_cache') {
+          keysToKeep.push(key)
+        } else {
+          // All other keys are global cache and should be removed
+          keysToRemove.push(key)
+        }
+      }
+      
+      console.log(`[Cache] Removing ${keysToRemove.length} global cache items, keeping ${keysToKeep.length} user/auth items`)
+      
+      // Remove cache items
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key)
+        console.log(`[Cache] Removed: ${key}`)
+      })
+      
+      // Set new version - this is also global, not user-specific
+      localStorage.setItem(CACHE_VERSION_KEY, CACHE_VERSION)
+      console.log(`[Cache] Cache cleared and version updated to ${CACHE_VERSION} (global cache)`)
+      
+      // In development, show instruction to disable cache if needed
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Cache] Dev mode: Run localStorage.setItem("disable_cache", "true") and reload to disable caching')
+      }
+    } catch (error) {
+      console.error('[Cache] Error clearing cache on version change:', error)
+    }
+  } else {
+    console.log(`[Cache] Version check passed: ${CACHE_VERSION} (global cache, not user-specific)`)
+  }
+}
 
 // Cache structure
 interface CacheItem<T> {
@@ -24,7 +104,19 @@ export function setCacheItem<T>(key: string, data: T, expirationTime?: number): 
   // Skip caching if localStorage is not available (SSR)
   if (typeof window === 'undefined') return;
   
+  // In development, if cache is disabled, don't cache
+  if (DISABLE_CACHE_IN_DEV) {
+    return
+  }
+  
   try {
+    // Verify cache version before setting
+    const storedVersion = localStorage.getItem(CACHE_VERSION_KEY)
+    if (storedVersion && storedVersion !== CACHE_VERSION) {
+      // Version mismatch, don't cache
+      return
+    }
+    
     const timestamp = Date.now();
     // Get appropriate expiration time based on key prefix or use default/custom
     const cacheTime = expirationTime || getCacheTimeForKey(key);
@@ -51,7 +143,25 @@ export function getCacheItem<T>(key: string): T | null {
   // Skip caching if localStorage is not available (SSR)
   if (typeof window === 'undefined') return null;
   
+  // In development, if cache is disabled, don't return cached data
+  if (typeof window !== 'undefined' && 
+      process.env.NODE_ENV === 'development' && 
+      localStorage.getItem('disable_cache') === 'true') {
+    return null
+  }
+  
   try {
+    // Always check cache version first - this ensures cache is invalidated on version change
+    const storedVersion = localStorage.getItem(CACHE_VERSION_KEY)
+    if (!storedVersion || storedVersion !== CACHE_VERSION) {
+      // Version mismatch or no version set, invalidate this cache item
+      if (localStorage.getItem(key)) {
+        console.log(`[Cache] Invalidating ${key} due to version mismatch (stored: ${storedVersion}, current: ${CACHE_VERSION})`)
+        localStorage.removeItem(key)
+      }
+      return null
+    }
+    
     const cacheItemJson = localStorage.getItem(key);
     if (!cacheItemJson) return null;
     
@@ -133,6 +243,13 @@ export function hasCacheItem(key: string): boolean {
   if (typeof window === 'undefined') return false;
   
   try {
+    // Check cache version first
+    const storedVersion = localStorage.getItem(CACHE_VERSION_KEY)
+    if (storedVersion !== CACHE_VERSION) {
+      // Version mismatch, cache is invalid
+      return false
+    }
+    
     const cacheItemJson = localStorage.getItem(key);
     if (!cacheItemJson) return false;
     

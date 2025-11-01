@@ -1,3 +1,24 @@
+export interface AuthUser {
+  id: string
+  name: string
+  email: string
+  role?: string
+  membership_status?: string
+  membership_expires_at?: string | null
+  avatar?: string
+  membership?: MembershipPlan
+  devices?: Device[]
+}
+
+export interface AuthResponse {
+  success?: boolean
+  token: string
+  refresh_token?: string
+  refreshToken?: string // Alternative naming
+  user: AuthUser
+  device_id?: string
+}
+
 export interface User {
   id: string
   name: string
@@ -82,50 +103,6 @@ export interface CategoryDetails {
   }
 }
 
-export interface Creator {
-  slug: string
-  name: string
-  avatarUrl: string
-  rank?: number
-  stats: {
-    views: number
-    videoCount: number
-    subscribers: number
-    rating: number
-  }
-}
-
-export interface CreatorListResponse {
-  creators: Creator[]
-  pagination: {
-    currentPage: number
-    totalPages: number
-    hasNextPage: boolean
-  }
-}
-
-export interface CreatorVideo {
-  id: string
-  title: string
-  thumbnailUrl: string
-  url: string
-  duration: string
-  viewCount: number
-}
-
-export interface CreatorDetailsResponse {
-  creator: Creator & {
-    city?: string
-    country?: string
-    about?: string
-  }
-  videos: CreatorVideo[]
-  pagination: {
-    currentPage: number
-    totalPages: number
-    hasNextPage: boolean
-  }
-}
 
 export interface SearchResponse {
   videos: Video[]

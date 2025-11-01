@@ -60,6 +60,30 @@ export async function getUserById(userId: number): Promise<AuthUser | null> {
       },
     })
 
+    // If endpoint doesn't exist (404), fall back to fetching all users
+    if (!response.ok && response.status === 404) {
+      console.log(`[Admin] User endpoint not found (404), falling back to getAllUsers`)
+      try {
+        const allUsers = await getAllUsers()
+        // Try matching by string ID or numeric ID
+        const user = allUsers.find((u) => {
+          const userStrId = String(u.id)
+          const userIdStr = String(userId)
+          return userStrId === userIdStr || parseInt(userStrId) === userId
+        })
+        if (user) {
+          console.log(`[Admin] User found via getAllUsers fallback:`, user)
+          return user
+        } else {
+          console.log(`[Admin] User ${userId} not found in users list`)
+          return null
+        }
+      } catch (fallbackError) {
+        console.error(`[Admin] Error in fallback getAllUsers:`, fallbackError)
+        throw new Error(`Failed to fetch user: User not found and fallback failed`)
+      }
+    }
+
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`[Admin] Error fetching user: ${response.status} ${response.statusText}`, errorText)
@@ -93,6 +117,12 @@ export async function getUserDevices(userId: number): Promise<UserDevice[]> {
         Authorization: `Bearer ${token}`,
       },
     })
+
+    // If endpoint doesn't exist (404), return empty array
+    if (!response.ok && response.status === 404) {
+      console.log(`[Admin] Devices endpoint not found (404), returning empty array`)
+      return []
+    }
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -180,13 +210,27 @@ export async function updateUser(userId: number, userData: Partial<AuthUser>): P
       throw new Error("No authentication token found")
     }
 
-    // Calculate expiry date for membership changes
-    if (userData.membership_status) {
+    // Only auto-calculate expiry date if:
+    // 1. membership_status is being changed
+    // 2. membership_expires_at is NOT explicitly provided (to allow manual editing)
+    if (userData.membership_status !== undefined && !('membership_expires_at' in userData)) {
       if (userData.membership_status === "free" || userData.membership_status === "admin") {
         userData.membership_expires_at = null
       } else {
         userData.membership_expires_at = calculatePlanExpiry(userData.membership_status)
       }
+    }
+
+    // If only password-related fields are being updated (without membership fields),
+    // ensure membership fields are not accidentally modified
+    const hasPasswordField = 'password' in userData || 'new_password' in userData || 'current_password' in userData
+    const hasMembershipField = 'membership_status' in userData || 'membership_expires_at' in userData
+    
+    // If updating password but not membership, don't include membership fields
+    if (hasPasswordField && !hasMembershipField) {
+      // Explicitly exclude membership fields to prevent backend from auto-updating them
+      delete userData.membership_status
+      delete userData.membership_expires_at
     }
 
     console.log(`[Admin] Updating user ${userId}:`, userData)

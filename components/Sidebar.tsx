@@ -8,7 +8,6 @@ import {
   Home, 
   Film, 
   Crown, 
-  Users, 
   LogIn, 
   LogOut, 
   Settings, 
@@ -16,7 +15,8 @@ import {
   UserCircle,
   Menu,
   X,
-  ChevronRight
+  ChevronRight,
+  Server
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSidebar } from "@/contexts/SidebarContext"
@@ -62,20 +62,20 @@ const Sidebar = () => {
       href: "/categories",
       icon: Film,
       label: "Categories",
-      isActive: pathname === "/categories" || pathname.startsWith("/category/")
+      isActive: pathname === "/categories" || (pathname && pathname.startsWith("/category/"))
     },
     {
       href: "/webseries",
       icon: Crown,
       label: "Webseries",
-      isActive: pathname === "/webseries" || pathname.startsWith("/webseries/")
+      isActive: pathname === "/webseries" || (pathname && pathname.startsWith("/webseries/"))
     },
     {
-      href: "/creators",
-      icon: Users,
-      label: "Creators",
-      isActive: pathname === "/creators" || pathname.startsWith("/creator/")
-    }
+      href: "/provider/indianpornhq",
+      icon: Server,
+      label: "Providers",
+      isActive: pathname && pathname.startsWith("/provider/")
+    },
   ]
 
   return (

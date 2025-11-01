@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation"
 import Head from "next/head"
 import Link from "next/link"
 import { toast } from "react-hot-toast"
-import { Users, UserPlus, Search, Filter, ChevronLeft, ChevronRight } from "lucide-react"
+import { Users, UserPlus, Search, Filter, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
-import { getAllUsers } from "@/services/admin"
+import { getAllUsers, deleteUser } from "@/services/admin"
 import type { AuthUser } from "@/types"
 
 export default function AdminDashboard() {
@@ -20,6 +20,7 @@ export default function AdminDashboard() {
   const [currentPage, setCurrentPage] = useState(1)
   const [filterStatus, setFilterStatus] = useState<string>("all")
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
   const usersPerPage = 10
 
   useEffect(() => {
@@ -67,6 +68,25 @@ export default function AdminDashboard() {
   const handlePageChange = (page: number) => {
     if (page < 1 || page > totalPages) return
     setCurrentPage(page)
+  }
+
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (!confirm(`Are you sure you want to delete user "${userName}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      setDeletingUserId(userId)
+      await deleteUser(parseInt(userId))
+      toast.success("User deleted successfully")
+      // Reload users list
+      await loadUsers()
+    } catch (err) {
+      console.error("Error deleting user:", err)
+      toast.error(err instanceof Error ? err.message : "Failed to delete user")
+    } finally {
+      setDeletingUserId(null)
+    }
   }
 
   // Format date for display
@@ -320,6 +340,18 @@ export default function AdminDashboard() {
                           >
                             Devices
                           </Link>
+                          <button
+                            onClick={() => handleDeleteUser(user.id, user.name)}
+                            disabled={deletingUserId === user.id}
+                            className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Delete user"
+                          >
+                            {deletingUserId === user.id ? (
+                              <div className="animate-spin rounded-full h-3 w-3 border-t-2 border-b-2 border-white"></div>
+                            ) : (
+                              <Trash2 size={14} />
+                            )}
+                          </button>
                         </div>
                       </td>
                     </tr>

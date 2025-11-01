@@ -56,7 +56,8 @@ export default function WebseriesPage() {
       const data = await fetchLatestWebseries(page)
 
       setWebseries(data.posts)
-      setCurrentPage(data.page || page)
+      // Always use the requested page number, not the API response
+      setCurrentPage(page)
       setTotalPages(data.total_pages || 1)
       setHasNextPage(data.has_next_page || false)
       
@@ -73,11 +74,16 @@ export default function WebseriesPage() {
   useEffect(() => {
     if (currentPage > 0) {
       loadWebseries(currentPage)
-      
-      // Update URL when page changes
-      if (router.isReady && currentPage > 1) {
+    }
+  }, [currentPage])
+
+  // Separate effect for URL updates to avoid conflicts
+  useEffect(() => {
+    if (router.isReady && currentPage > 0) {
+      if (currentPage > 1) {
         router.push(`/webseries?page=${currentPage}`, undefined, { shallow: true })
-      } else if (router.isReady && currentPage === 1 && router.query.page) {
+      } else {
+        // Always go to clean URL for page 1
         router.push('/webseries', undefined, { shallow: true })
       }
     }
@@ -85,7 +91,15 @@ export default function WebseriesPage() {
 
   const handlePageChange = (page: number) => {
     if (page < 1 || page > totalPages) return
-    setCurrentPage(page)
+    
+    // Always reload data when changing pages, even if it's the same page
+    if (page !== currentPage) {
+      setCurrentPage(page)
+    } else {
+      // If clicking the same page, force reload the data
+      loadWebseries(page)
+    }
+    
     // Scroll to top when changing pages
     window.scrollTo({ top: 0, behavior: "smooth" })
   }
@@ -215,6 +229,9 @@ export default function WebseriesPage() {
                     pageNum = currentPage - 2 + i
                   }
 
+                  // Ensure pageNum is valid
+                  if (pageNum < 1 || pageNum > totalPages) return null
+
                   return (
                     <button
                       key={pageNum}
@@ -241,6 +258,20 @@ export default function WebseriesPage() {
                     >
                       {totalPages}
                     </button>
+                  </>
+                )}
+
+                {/* Always show page 1 if not already visible and we're not on first few pages */}
+                {totalPages > 5 && currentPage > 3 && (
+                  <>
+                    <button
+                      onClick={() => handlePageChange(1)}
+                      disabled={loading}
+                      className="w-10 h-10 rounded-lg bg-gray-800/70 text-white hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      1
+                    </button>
+                    <span className="text-gray-500">...</span>
                   </>
                 )}
               </div>

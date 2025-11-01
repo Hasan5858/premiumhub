@@ -1,67 +1,63 @@
-// In-memory storage for slug to URL mapping
-const slugToUrlMap = new Map<string, string>()
-const urlToSlugMap = new Map<string, string>()
-
 /**
- * Generates a clean, SEO-friendly slug from a title or URL
+ * Generate SEO-friendly slug from title
  */
-export function generateSlug(input: string): string {
-  if (!input) return `video-${Math.random().toString(36).substring(2, 10)}`
-
-  // Extract the last part of the URL if it's a URL
-  if (input.startsWith("http")) {
-    const urlParts = input.split("/")
-    input = urlParts[urlParts.length - 1] || input
-  }
-
-  // Remove file extension if present
-  input = input.replace(/\.[^/.]+$/, "")
-
-  // Replace special characters with spaces
-  let slug = input
+export function generateSlug(title: string): string {
+  return title
     .toLowerCase()
-    .replace(/[^\w\s-]/g, " ") // Replace non-word chars with spaces
-    .replace(/\s+/g, "-") // Replace spaces with hyphens
-    .replace(/-+/g, "-") // Replace multiple hyphens with single hyphen
-    .trim() // Trim leading/trailing spaces
-    .replace(/^-+|-+$/g, "") // Trim hyphens from start and end
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+    .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
+    .substring(0, 100) // Limit length for SEO
+}
 
-  // Ensure the slug isn't too long for URLs
-  if (slug.length > 100) {
-    slug = slug.substring(0, 100)
+/**
+ * Generate a clean video ID for slug generation
+ */
+export function cleanVideoId(videoId: string): string {
+  // Remove special characters and keep only alphanumeric
+  return videoId
+    .replace(/[^\w]/g, '') // Keep only alphanumeric characters
+    .substring(0, 12) // Limit length
+}
+
+/**
+ * Generate unique video slug with ID fallback
+ */
+export function generateVideoSlug(title: string, videoId: string, provider: string, index?: number): string {
+  const baseSlug = generateSlug(title)
+  // Use index if provided, otherwise create a hash
+  const idSuffix = index !== undefined ? index.toString() : btoa(videoId).replace(/[^a-zA-Z0-9]/g, '').substring(0, 8)
+  return `${baseSlug}-${provider}-${idSuffix}`
+}
+
+/**
+ * Extract video ID from slug
+ */
+export function extractVideoIdFromSlug(slug: string): string | null {
+  const parts = slug.split('-')
+  if (parts.length >= 3) {
+    // Last part should be the cleaned ID
+    return parts[parts.length - 1]
   }
-
-  return slug
+  return null
 }
 
 /**
- * Stores a mapping between a slug and its original URL
+ * Map cleaned ID back to original ID
  */
-export function mapSlugToUrl(slug: string, url: string): void {
-  slugToUrlMap.set(slug, url)
-  urlToSlugMap.set(url, slug)
+export function mapCleanedIdToOriginal(cleanedId: string, originalId: string): string {
+  // If the cleaned ID is a substring of the original, return original
+  if (originalId.includes(cleanedId)) {
+    return originalId
+  }
+  return cleanedId
 }
 
 /**
- * Retrieves the original URL for a given slug
+ * Generate fallback slug when title is not available
  */
-export function getUrlFromSlug(slug: string): string | undefined {
-  return slugToUrlMap.get(slug)
-}
-
-/**
- * Retrieves the slug for a given URL
- */
-export function getSlugFromUrl(url: string): string | undefined {
-  return urlToSlugMap.get(url)
-}
-
-/**
- * Extracts a formatted title from a slug
- */
-export function extractTitleFromSlug(slug: string): string {
-  return slug
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ")
+export function generateFallbackSlug(videoId: string, provider: string): string {
+  const shortId = videoId.substring(0, 8)
+  return `video-${provider}-${shortId}`
 }

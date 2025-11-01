@@ -2,11 +2,11 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/router"
 import Link from "next/link"
 import { toast } from "react-hot-toast"
-import { Eye, EyeOff, LogIn } from "lucide-react"
+import { Eye, EyeOff, LogIn, X, Copy, Check } from "lucide-react"
 import { login } from "@/services/auth"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -16,24 +16,139 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const router = useRouter()
   const { setUser } = useAuth()
+  const formSubmittedRef = useRef(false)
+  
+  // Restore form values and error from sessionStorage on mount (in case of remount)
+  // NOTE: We don't store password for security reasons - it will be cleared if page remounts
+  useEffect(() => {
+    const savedEmail = sessionStorage.getItem("login_email")
+    const savedError = sessionStorage.getItem("login_error")
+    
+    if (savedEmail && !email) {
+      setEmail(savedEmail)
+    }
+    if (savedError && !error) {
+      setError(savedError)
+    }
+  }, [])
+  
+  // Save form values to sessionStorage as user types (for persistence)
+  useEffect(() => {
+    if (email) {
+      sessionStorage.setItem("login_email", email)
+    }
+  }, [email])
+  
+  // Keep error in sessionStorage so it persists across remounts
+  useEffect(() => {
+    if (error) {
+      sessionStorage.setItem("login_error", error)
+    } else {
+      sessionStorage.removeItem("login_error")
+    }
+  }, [error])
+
+  const copyErrorToClipboard = () => {
+    if (error) {
+      navigator.clipboard.writeText(error)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
+    e.stopPropagation()
+    
+    // Prevent double submission
+    if (formSubmittedRef.current || loading) {
+      console.log("[Login Page] Submission already in progress, ignoring")
+      return
+    }
+    
+    formSubmittedRef.current = true
+    
+    // Only clear error if user is starting a fresh attempt (not retrying after seeing error)
+    // If there's already an error visible, keep it until we have a new result
+    const hadError = !!error
+    if (!hadError) {
+      setError(null)
+      sessionStorage.removeItem("login_error")
+    }
+    
     setLoading(true)
 
     try {
+      console.log("[Login Page] Attempting login...")
+      console.log("[Login Page] Form values:", { email, passwordLength: password.length })
+      
       const response = await login(email, password)
-      setUser(response.user || null)
+      console.log("[Login Page] Login response received:", response)
+      
+      if (!response) {
+        throw new Error("No response received from server")
+      }
+
+      if (!response.user) {
+        console.warn("[Login Page] Response missing user data:", response)
+        throw new Error("Login response missing user data")
+      }
+
+      // Clear form data from sessionStorage on success
+      sessionStorage.removeItem("login_email")
+      sessionStorage.removeItem("login_error")
+      
+      setUser(response.user)
+      console.log("[Login Page] User set in context, redirecting...")
       toast.success("Login successful!")
-      router.push("/")
+      
+      // Use window.location for a full page reload to ensure auth state is properly initialized
+      // This is more reliable than router.push for auth redirects
+      setTimeout(() => {
+        window.location.href = "/"
+      }, 100)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed. Please try again.")
-      toast.error(err instanceof Error ? err.message : "Login failed")
+      console.error("[Login Page] Login error:", err)
+      
+      let errorMessage = "Login failed. Please try again."
+      
+      if (err instanceof Error) {
+        errorMessage = err.message
+        console.error("[Login Page] Error message:", err.message)
+        console.error("[Login Page] Error stack:", err.stack)
+      } else if (typeof err === 'object' && err !== null) {
+        // Try to extract error information from various possible structures
+        const errorObj = err as any
+        if (errorObj.response) {
+          console.error("[Login Page] Error response:", errorObj.response)
+          if (errorObj.response.data) {
+            console.error("[Login Page] Error response data:", errorObj.response.data)
+            errorMessage = errorObj.response.data.message || errorObj.response.data.error || JSON.stringify(errorObj.response.data)
+          } else {
+            errorMessage = `Server error: ${errorObj.response.status} ${errorObj.response.statusText || ''}`
+          }
+        } else if (errorObj.message) {
+          errorMessage = errorObj.message
+        } else {
+          errorMessage = JSON.stringify(err)
+        }
+      }
+      
+      // Set error and persist it
+      setError(errorMessage)
+      sessionStorage.setItem("login_error", errorMessage)
+      
+      // IMPORTANT: DO NOT clear form values on error - keep them so user can retry easily
+      console.log("[Login Page] Error set, form values preserved:", { email, passwordLength: password.length })
+      
+      // Don't show toast - keep error visible on page instead
+      // toast.error(errorMessage, { duration: Infinity }) // Use Infinity if we want toast to stay
     } finally {
       setLoading(false)
+      formSubmittedRef.current = false
     }
   }
 
@@ -54,9 +169,56 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {error && <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-3 rounded">{error}</div>}
+        {error && (
+          <div className="bg-red-500/10 border-2 border-red-500/70 text-red-400 px-4 py-3 rounded-lg shadow-lg relative">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold mb-1 flex items-center gap-2">
+                  <span>Login Error</span>
+                  <button
+                    onClick={copyErrorToClipboard}
+                    className="p-1 hover:bg-red-500/20 rounded transition-colors"
+                    title="Copy error message"
+                  >
+                    {copied ? (
+                      <Check size={14} className="text-green-400" />
+                    ) : (
+                      <Copy size={14} />
+                    )}
+                  </button>
+                </div>
+                <div className="text-sm break-words whitespace-pre-wrap font-mono bg-gray-900/50 p-2 rounded mt-2">
+                  {error}
+                </div>
+                <div className="mt-2 text-xs text-red-500/70">
+                  Check browser console (F12) for detailed logs. Error will persist until you close it manually.
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setError(null)
+                  sessionStorage.removeItem("login_error")
+                }}
+                className="p-1 hover:bg-red-500/20 rounded transition-colors flex-shrink-0"
+                title="Close error"
+                aria-label="Close error"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        )}
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form 
+          className="mt-8 space-y-6" 
+          onSubmit={handleSubmit}
+          onReset={(e) => {
+            // Prevent accidental form resets - log if it happens
+            console.warn("[Login Page] Form reset prevented!", e)
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+        >
           <div className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-300">

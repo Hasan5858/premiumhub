@@ -94,31 +94,91 @@ export async function login(email: string, password: string): Promise<AuthRespon
       },
     })
 
-    console.log("[Auth Service] Login response:", response.data)
+    console.log("[Auth Service] Login response status:", response.status)
+    console.log("[Auth Service] Login response headers:", response.headers)
+    console.log("[Auth Service] Login response data:", response.data)
+    console.log("[Auth Service] Login response data type:", typeof response.data)
 
-    const { token, refresh_token, user, device_id } = response.data
+    // Validate response structure
+    if (!response.data) {
+      console.error("[Auth Service] Response has no data:", response)
+      throw new Error("Invalid response: No data received from server")
+    }
+
+    // Extract response data - check for both refresh_token and refreshToken (camelCase variant)
+    const { token, refresh_token, refreshToken, user, device_id } = response.data
+    
+    // Use whichever refresh token field exists (prefer refresh_token)
+    const refreshTokenValue = refresh_token || refreshToken
+
+    // Validate required fields
+    if (!token) {
+      console.error("[Auth Service] Response missing token:", response.data)
+      throw new Error("Invalid response: Missing authentication token")
+    }
+
+    if (!user) {
+      console.error("[Auth Service] Response missing user:", response.data)
+      throw new Error("Invalid response: Missing user data")
+    }
+
+    // Refresh token is optional - some APIs don't provide it
+    if (!refreshTokenValue) {
+      console.warn("[Auth Service] Response missing refresh_token - continuing without it:", response.data)
+      console.warn("[Auth Service] Token refresh functionality may be limited")
+    }
+
+    console.log("[Auth Service] Storing tokens and user data...")
 
     // Store tokens, user data, and device ID
     localStorage.setItem("auth_token", token)
-    localStorage.setItem("refresh_token", refresh_token)
+    
+    // Only store refresh token if it exists
+    if (refreshTokenValue) {
+      localStorage.setItem("refresh_token", refreshTokenValue)
+      console.log("[Auth Service] Refresh token stored")
+    } else {
+      // Remove any existing refresh token if API doesn't provide one
+      localStorage.removeItem("refresh_token")
+      console.warn("[Auth Service] No refresh token provided by API")
+    }
+    
     localStorage.setItem("user", JSON.stringify(user))
 
     // Store the current device ID
     if (device_id) {
       localStorage.setItem("current_device_id", device_id)
+      console.log("[Auth Service] Device ID stored:", device_id)
     } else {
       // If device_id is not directly provided, try to extract it from token
       const tokenPayload = decodeToken(token)
       if (tokenPayload && tokenPayload.deviceId) {
         localStorage.setItem("current_device_id", tokenPayload.deviceId)
+        console.log("[Auth Service] Device ID extracted from token:", tokenPayload.deviceId)
+      } else {
+        console.warn("[Auth Service] No device_id found in response or token")
       }
     }
 
+    console.log("[Auth Service] Login successful, returning data")
     return response.data
   } catch (error) {
-    console.error("[Auth Service] Login error:", error)
+    console.error("[Auth Service] Login error occurred")
+    console.error("[Auth Service] Error type:", error?.constructor?.name)
+    console.error("[Auth Service] Error:", error)
 
     if (axios.isAxiosError(error)) {
+      console.error("[Auth Service] Axios error details:")
+      console.error("[Auth Service] - Response status:", error.response?.status)
+      console.error("[Auth Service] - Response status text:", error.response?.statusText)
+      console.error("[Auth Service] - Response data:", error.response?.data)
+      console.error("[Auth Service] - Response headers:", error.response?.headers)
+      console.error("[Auth Service] - Request URL:", error.config?.url)
+      console.error("[Auth Service] - Request method:", error.config?.method)
+      console.error("[Auth Service] - Request data:", error.config?.data)
+      console.error("[Auth Service] - No response?", !error.response)
+      console.error("[Auth Service] - Network error?", error.message === 'Network Error')
+
       if (error.response?.status === 429) {
         // Handle rate limiting
         const attempts = localStorage.getItem(`login_attempts_${email}`) || '{"count": 0}'
@@ -146,11 +206,44 @@ export async function login(email: string, password: string): Promise<AuthRespon
       }
 
       if (!error.response) {
-        throw new Error("Unable to connect to the server. Please check your internet connection.")
+        // Network error or server unreachable
+        const networkError = "Unable to connect to the server. Please check your internet connection."
+        console.error("[Auth Service] Network error, throwing:", networkError)
+        throw new Error(networkError)
       }
-      throw new Error(error.response.data.message || "Login failed")
+
+      // Server responded with an error status
+      const errorData = error.response.data
+      let errorMessage = "Login failed"
+
+      if (errorData) {
+        if (typeof errorData === 'string') {
+          errorMessage = errorData
+        } else if (errorData.message) {
+          errorMessage = errorData.message
+        } else if (errorData.error) {
+          errorMessage = typeof errorData.error === 'string' ? errorData.error : JSON.stringify(errorData.error)
+        } else {
+          errorMessage = `Server error (${error.response.status}): ${JSON.stringify(errorData)}`
+        }
+      } else {
+        errorMessage = `Server error: ${error.response.status} ${error.response.statusText || ''}`
+      }
+
+      console.error("[Auth Service] Throwing error message:", errorMessage)
+      throw new Error(errorMessage)
     }
-    throw error
+
+    // Non-axios error
+    if (error instanceof Error) {
+      console.error("[Auth Service] Throwing Error instance:", error.message)
+      throw error
+    }
+
+    // Unknown error type
+    const unknownError = new Error(`Unknown error: ${String(error)}`)
+    console.error("[Auth Service] Throwing unknown error:", unknownError.message)
+    throw unknownError
   }
 }
 
@@ -315,7 +408,8 @@ export async function checkAuth(): Promise<boolean> {
     const token = localStorage.getItem("auth_token")
     const refreshToken = localStorage.getItem("refresh_token")
 
-    if (!token || !refreshToken) return false
+    // Token is required, but refresh token is optional
+    if (!token) return false
 
     // Verify token with server
     try {
@@ -323,12 +417,17 @@ export async function checkAuth(): Promise<boolean> {
       await api.get("/api/user/profile")
       return true
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        // Try to refresh token
-        const response = await refreshAccessToken(refreshToken)
-        if (response.token) {
-          localStorage.setItem("auth_token", response.token)
-          return true
+      // If we get a 401 and have a refresh token, try to refresh
+      if (axios.isAxiosError(error) && error.response?.status === 401 && refreshToken) {
+        try {
+          const response = await refreshAccessToken(refreshToken)
+          if (response.token) {
+            localStorage.setItem("auth_token", response.token)
+            return true
+          }
+        } catch (refreshError) {
+          console.warn("[Auth Service] Token refresh failed:", refreshError)
+          // Continue to fall through and clear auth
         }
       }
       throw error

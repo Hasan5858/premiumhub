@@ -5,25 +5,22 @@ import { useRouter } from "next/router"
 import Head from "next/head"
 import Link from "next/link"
 import { toast } from "react-hot-toast"
-import { ArrowLeft, Smartphone, Laptop, LogOut, AlertTriangle, RefreshCw } from "lucide-react"
+import { ArrowLeft, Laptop, Smartphone, LogOut, AlertCircle, User } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
-import { getUserDevices, logoutUserDevice, logoutAllDevices } from "@/services/admin"
-import type { UserDevice } from "@/types"
+import { getUserDevices, logoutUserDevice, logoutAllDevices, getUserById } from "@/services/admin"
+import type { UserDevice, AuthUser } from "@/types"
 
-export default function UserDevices() {
+export default function UserDevicesPage() {
   const { user: currentUser, isAdmin } = useAuth()
   const router = useRouter()
   const { id } = router.query
-  const userId = id ? Number(id) : null
 
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [devices, setDevices] = useState<UserDevice[]>([])
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showLogoutAllConfirm, setShowLogoutAllConfirm] = useState(false)
+  const [removingDevice, setRemovingDevice] = useState<number | null>(null)
   const [loggingOutAll, setLoggingOutAll] = useState(false)
-  const [loggingOutDevice, setLoggingOutDevice] = useState<number | null>(null)
-  const [userName, setUserName] = useState<string>("User")
 
   useEffect(() => {
     // Redirect if not admin
@@ -33,114 +30,88 @@ export default function UserDevices() {
       return
     }
 
-    // Load devices
-    if (userId) {
-      loadDevices()
-      loadUserName()
+    // Wait for router to be ready and have id
+    if (router.isReady && id) {
+      loadData()
     }
-  }, [currentUser, isAdmin, userId, router])
+  }, [currentUser, isAdmin, router.isReady, id, router])
 
-  const loadUserName = async () => {
-    if (!userId) return
-
-    try {
-      // This is a simplified approach - in a real app, you'd fetch the user details
-      const token = localStorage.getItem("auth_token")
-      if (!token) return
-
-      const response = await fetch(`https://phubauth.hasansarker58.workers.dev/api/admin/users`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        const user = data.users.find((u: any) => u.id === userId)
-        if (user) {
-          setUserName(user.name || "User")
-        }
-      }
-    } catch (err) {
-      console.error("Error loading user name:", err)
-    }
-  }
-
-  const loadDevices = async () => {
-    if (!userId) return
+  const loadData = async () => {
+    if (!id || typeof id !== "string") return
 
     try {
       setLoading(true)
       setError(null)
 
-      // Check if token exists
-      const token = localStorage.getItem("auth_token")
-      if (!token) {
-        setError("No authentication token found. Please log in again.")
-        setLoading(false)
+      const userId = parseInt(id)
+      if (isNaN(userId)) {
+        setError("Invalid user ID")
         return
       }
 
-      // Get user devices
-      const deviceList = await getUserDevices(userId)
+      // Load user info and devices in parallel
+      const [userData, deviceList] = await Promise.all([
+        getUserById(userId),
+        getUserDevices(userId),
+      ])
+
+      if (!userData) {
+        setError("User not found")
+        toast.error("User not found")
+        return
+      }
+
+      setUser(userData)
       setDevices(deviceList)
-    } catch (err: any) {
-      console.error("Error loading devices:", err)
-      setError("Failed to load user devices. Please try again.")
-      toast.error("Failed to load user devices")
+    } catch (err) {
+      console.error("Error loading data:", err)
+      setError(err instanceof Error ? err.message : "Failed to load data. Please try again.")
+      toast.error("Failed to load data")
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }
 
-  const handleRefresh = () => {
-    setRefreshing(true)
-    loadDevices()
-  }
-
   const handleLogoutDevice = async (deviceId: number) => {
-    if (!userId) return
+    if (!id || typeof id !== "string") return
 
     try {
-      setLoggingOutDevice(deviceId)
+      setRemovingDevice(deviceId)
+      const userId = parseInt(id)
       await logoutUserDevice(userId, deviceId)
+
+      // Remove device from list
       setDevices(devices.filter((d) => d.id !== deviceId))
       toast.success("Device logged out successfully")
-    } catch (err: any) {
-      console.error("Error logging out device:", err)
-      toast.error("Failed to logout device")
+    } catch (err) {
+      console.error("Failed to logout device:", err)
+      toast.error(err instanceof Error ? err.message : "Failed to logout device. Please try again.")
     } finally {
-      setLoggingOutDevice(null)
+      setRemovingDevice(null)
     }
   }
 
   const handleLogoutAllDevices = async () => {
-    if (!userId) return
+    if (!id || typeof id !== "string") return
+
+    if (!confirm("Are you sure you want to logout all devices for this user?")) {
+      return
+    }
 
     try {
       setLoggingOutAll(true)
+      const userId = parseInt(id)
       await logoutAllDevices(userId)
+
+      // Clear devices list
       setDevices([])
       toast.success("All devices logged out successfully")
-      setShowLogoutAllConfirm(false)
-    } catch (err: any) {
-      console.error("Error logging out all devices:", err)
-      toast.error("Failed to logout all devices")
+    } catch (err) {
+      console.error("Failed to logout all devices:", err)
+      toast.error(err instanceof Error ? err.message : "Failed to logout all devices. Please try again.")
     } finally {
       setLoggingOutAll(false)
     }
-  }
-
-  // Format date for display
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "numeric",
-    })
   }
 
   // Helper function to format device name
@@ -160,8 +131,6 @@ export default function UserDevices() {
       deviceType = "Mac"
     } else if (deviceInfo.toLowerCase().includes("linux")) {
       deviceType = "Linux"
-    } else if (deviceInfo.toLowerCase().includes("node")) {
-      deviceType = "Node.js App"
     }
 
     // Extract browser info
@@ -181,114 +150,155 @@ export default function UserDevices() {
     return browserInfo ? `${deviceType} - ${browserInfo}` : deviceType
   }
 
-  // Retry loading devices
-  const handleRetry = () => {
-    loadDevices()
+  // Format date for display
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
+  if (loading) {
+    return (
+      <>
+        <Head>
+          <title>User Devices - Admin Dashboard</title>
+        </Head>
+        <div className="pt-20 pb-10">
+          <div className="container mx-auto px-4">
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (!user) {
+    return (
+      <>
+        <Head>
+          <title>User Not Found - Admin Dashboard</title>
+        </Head>
+        <div className="pt-20 pb-10">
+          <div className="container mx-auto px-4">
+            <div className="text-center py-12">
+              <h1 className="text-2xl font-bold text-white mb-4">User Not Found</h1>
+              <Link href="/admin" className="text-purple-400 hover:text-purple-300">
+                ← Back to Admin Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </>
+    )
   }
 
   return (
     <>
       <Head>
-        <title>{userName}'s Devices - PremiumHUB</title>
-        <meta name="description" content="Manage user devices in PremiumHUB admin dashboard" />
+        <title>{user.name} - Devices - Admin Dashboard</title>
+        <meta name="description" content={`Manage devices for ${user.name}`} />
       </Head>
 
       <div className="pt-20 pb-10">
-        <div className="container mx-auto px-4">
+        <div className="container mx-auto px-4 max-w-6xl">
           {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-8">
-            <div className="flex items-center">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center space-x-4">
               <Link
-                href={`/admin/users/${userId}`}
-                className="mr-4 p-2 bg-gray-800 rounded-full hover:bg-gray-700 transition-colors"
+                href="/admin"
+                className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
               >
                 <ArrowLeft size={20} />
               </Link>
-              <h1 className="text-3xl font-bold text-white">{userName}'s Devices</h1>
+              <div>
+                <h1 className="text-3xl font-bold text-white">User Devices</h1>
+                <div className="flex items-center mt-1 space-x-2 text-gray-400">
+                  <User size={16} />
+                  <span>{user.name} ({user.email})</span>
+                </div>
+              </div>
             </div>
-
-            <div className="flex mt-4 md:mt-0 space-x-2">
+            {devices.length > 0 && (
               <button
-                onClick={handleRefresh}
-                className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center"
-                disabled={refreshing}
+                onClick={handleLogoutAllDevices}
+                disabled={loggingOutAll}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {refreshing ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                {loggingOutAll ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                    Logging out...
+                  </>
                 ) : (
-                  <RefreshCw size={16} className="mr-2" />
+                  <>
+                    <LogOut size={18} className="mr-2" />
+                    Logout All Devices
+                  </>
                 )}
-                Refresh
               </button>
-
-              {devices.length > 0 && (
-                <button
-                  onClick={() => setShowLogoutAllConfirm(true)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
-                >
-                  <LogOut size={18} className="mr-2" />
-                  Logout All Devices
-                </button>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Error message */}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-3 rounded mb-6">
-              <div className="flex items-start">
-                <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="font-medium">{error}</p>
-                  <button
-                    onClick={handleRetry}
-                    className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded"
-                  >
-                    Retry
-                  </button>
-                </div>
-              </div>
+            <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-3 rounded mb-6 flex items-center">
+              <AlertCircle size={18} className="mr-2" />
+              {error}
             </div>
           )}
 
           {/* Devices List */}
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+          {devices.length === 0 ? (
+            <div className="bg-gray-800 rounded-lg p-12 text-center">
+              <Laptop size={48} className="mx-auto text-gray-600 mb-4" />
+              <h3 className="text-xl font-medium text-gray-400 mb-2">No devices found</h3>
+              <p className="text-gray-500">This user has no active devices.</p>
             </div>
-          ) : devices.length > 0 ? (
+          ) : (
             <div className="space-y-4">
               {devices.map((device) => (
-                <div key={device.id} className="bg-gray-800 rounded-lg p-4">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between">
-                    <div className="flex items-center space-x-3">
+                <div key={device.id} className="bg-gray-800 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
                       {device.device_info?.toLowerCase().includes("mobile") ||
                       device.device_info?.toLowerCase().includes("android") ||
                       device.device_info?.toLowerCase().includes("iphone") ? (
-                        <Smartphone className="w-6 h-6 text-gray-400" />
+                        <Smartphone className="w-8 h-8 text-purple-400" />
                       ) : (
-                        <Laptop className="w-6 h-6 text-gray-400" />
+                        <Laptop className="w-8 h-8 text-purple-400" />
                       )}
                       <div>
-                        <p className="font-medium text-white">{formatDeviceName(device)}</p>
-                        <p className="text-sm text-gray-400">IP: {device.ip_address}</p>
-                        <p className="text-sm text-gray-400">Last active: {formatDate(device.last_login_at)}</p>
-                        <p className="text-xs text-gray-500">Device ID: {device.device_id}</p>
+                        <p className="font-medium text-white text-lg">{formatDeviceName(device)}</p>
+                        <div className="mt-1 space-y-1">
+                          <p className="text-sm text-gray-400">
+                            IP Address: <span className="text-gray-300">{device.ip_address}</span>
+                          </p>
+                          <p className="text-sm text-gray-400">
+                            Last Active: <span className="text-gray-300">{formatDate(device.last_login_at)}</span>
+                          </p>
+                          <p className="text-xs text-gray-500 font-mono">{device.device_id}</p>
+                        </div>
                       </div>
                     </div>
                     <button
                       onClick={() => handleLogoutDevice(device.id)}
-                      disabled={loggingOutDevice === device.id}
-                      className="mt-4 md:mt-0 text-sm px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center self-start md:self-center disabled:opacity-50"
+                      disabled={removingDevice === device.id}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {loggingOutDevice === device.id ? (
+                      {removingDevice === device.id ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                          Processing...
+                          Logging out...
                         </>
                       ) : (
                         <>
-                          <LogOut size={16} className="mr-1" />
+                          <LogOut size={18} className="mr-2" />
                           Logout Device
                         </>
                       )}
@@ -297,60 +307,26 @@ export default function UserDevices() {
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="text-center py-12 bg-gray-800 rounded-lg">
-              <h3 className="text-xl font-medium text-gray-400">No devices found</h3>
-              <p className="text-gray-500 mt-2">This user has no active devices.</p>
-              <Link
-                href={`/admin/users/${userId}`}
-                className="inline-block mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-              >
-                Back to User
-              </Link>
-            </div>
           )}
-        </div>
-      </div>
 
-      {/* Logout All Confirmation Modal */}
-      {showLogoutAllConfirm && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
-            <div className="flex items-center text-red-500 mb-4">
-              <AlertTriangle size={24} className="mr-2" />
-              <h3 className="text-xl font-bold">Logout All Devices</h3>
-            </div>
-            <p className="text-gray-300 mb-6">
-              Are you sure you want to log out all devices for {userName}? This will terminate all active sessions.
-            </p>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowLogoutAllConfirm(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+          {/* Summary */}
+          <div className="mt-8 bg-gray-800 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-400">Total Active Devices</p>
+                <p className="text-2xl font-bold text-white">{devices.length}</p>
+              </div>
+              <Link
+                href={`/admin/users/${id}`}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleLogoutAllDevices}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
-                disabled={loggingOutAll}
-              >
-                {loggingOutAll ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <LogOut size={18} className="mr-2" />
-                    Logout All
-                  </>
-                )}
-              </button>
+                Back to User Edit
+              </Link>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </>
   )
 }
+

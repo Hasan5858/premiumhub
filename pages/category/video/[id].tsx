@@ -5,7 +5,7 @@ import { useRouter } from "next/router"
 import Head from "next/head"
 import Link from "next/link"
 import { ChevronDown, ChevronUp, Clock, Eye, Tag, User, Film } from "lucide-react"
-import { fetchCategoryVideos, fetchCreators } from "@/services/api"
+import { fetchCategoryVideos } from "@/services/api"
 import MembershipCheck from "@/components/MembershipCheck"
 
 // Mock related videos for fallback
@@ -100,56 +100,12 @@ const mockRelatedVideos = [
   },
 ]
 
-// Mock creators for fallback
-const mockCreators = [
-  {
-    id: "creator-1",
-    name: "Creator Name 1",
-    slug: "creator-name-1",
-    avatarUrl: "/api/placeholder?height=100&width=100&query=creator%201",
-    stats: {
-      videoCount: 45,
-      viewCount: "1.2M",
-    },
-  },
-  {
-    id: "creator-2",
-    name: "Creator Name 2",
-    slug: "creator-name-2",
-    avatarUrl: "/api/placeholder?height=100&width=100&query=creator%202",
-    stats: {
-      videoCount: 32,
-      viewCount: "890K",
-    },
-  },
-  {
-    id: "creator-3",
-    name: "Creator Name 3",
-    slug: "creator-name-3",
-    avatarUrl: "/api/placeholder?height=100&width=100&query=creator%203",
-    stats: {
-      videoCount: 28,
-      viewCount: "750K",
-    },
-  },
-  {
-    id: "creator-4",
-    name: "Creator Name 4",
-    slug: "creator-name-4",
-    avatarUrl: "/api/placeholder?height=100&width=100&query=creator%204",
-    stats: {
-      videoCount: 19,
-      viewCount: "500K",
-    },
-  },
-]
 
 export default function CategoryVideoPage() {
   const router = useRouter()
   const { id } = router.query
   const [videoData, setVideoData] = useState<any>(null)
   const [relatedVideos, setRelatedVideos] = useState<any[]>([])
-  const [creators, setCreators] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showTags, setShowTags] = useState(false)
@@ -245,26 +201,6 @@ export default function CategoryVideoPage() {
           setRelatedVideos(mockRelatedVideos)
         }
 
-        // Fetch random creators for the sidebar
-        try {
-          // Use a random country code from this list
-          const countries = ["us", "in", "gb", "ca", "au", "fr", "de", "jp", "br", "mx"]
-          const randomCountry = countries[Math.floor(Math.random() * countries.length)]
-          const randomCreatorPage = Math.floor(Math.random() * 3) + 1
-
-          const creatorsData = await fetchCreators(randomCountry, randomCreatorPage)
-          if (creatorsData && creatorsData.creators && creatorsData.creators.length > 0) {
-            // Take 4 creators for the sidebar
-            setCreators(creatorsData.creators.slice(0, 4))
-          } else {
-            // Use mock creators if API call returns empty
-            setCreators(mockCreators)
-          }
-        } catch (err) {
-          console.error("Error fetching creators:", err)
-          // Use mock creators if API call fails
-          setCreators(mockCreators)
-        }
       } catch (err) {
         console.error("Error loading video data:", err)
         setError("Failed to load video. Please try again later.")
@@ -293,7 +229,6 @@ export default function CategoryVideoPage() {
           ],
         })
         setRelatedVideos(mockRelatedVideos)
-        setCreators(mockCreators)
       } finally {
         setLoading(false)
       }
@@ -373,42 +308,6 @@ export default function CategoryVideoPage() {
                 </MembershipCheck>
               </div>
 
-              {/* Sidebar with creators - desktop only */}
-              <div className="hidden lg:block lg:w-1/4 bg-gray-800/50 p-4">
-                <div className="mb-4 flex items-center">
-                  <User size={18} className="mr-2 text-purple-400" />
-                  <h3 className="text-lg font-semibold text-white">Popular Creators</h3>
-                </div>
-                <div className="space-y-4">
-                  {creators.map((creator, index) => (
-                    <Link
-                      key={index}
-                      href={`/creator/${creator.slug}`}
-                      className="flex items-center p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
-                    >
-                      <div className="w-12 h-12 rounded-full overflow-hidden mr-3 flex-shrink-0">
-                        <img
-                          src={creator.avatarUrl || "/api/placeholder?height=100&width=100&query=creator"}
-                          alt={creator.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement
-                            target.onerror = null
-                            target.src = "/api/placeholder?height=100&width=100&query=creator"
-                          }}
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-white font-medium truncate">{creator.name}</h4>
-                        <div className="flex items-center text-xs text-gray-400">
-                          <Film size={12} className="mr-1" />
-                          <span>{creator.stats?.videoCount || 0} videos</span>
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
             </div>
 
             {/* Video Info */}
@@ -515,39 +414,6 @@ export default function CategoryVideoPage() {
               </div>
             )}
 
-            {/* Mobile-only creators section */}
-            {creators.length > 0 && (
-              <div className="mt-8 lg:hidden">
-                <h2 className="text-xl font-bold text-white mb-4">Popular Creators</h2>
-                <div className="grid grid-cols-2 gap-4">
-                  {creators.map((creator, index) => (
-                    <Link
-                      key={index}
-                      href={`/creator/${creator.slug}`}
-                      className="flex flex-col items-center p-4 bg-gray-800 rounded-lg hover:bg-gray-700/80 transition-colors"
-                    >
-                      <div className="w-16 h-16 rounded-full overflow-hidden mb-3">
-                        <img
-                          src={creator.avatarUrl || "/api/placeholder?height=100&width=100&query=creator"}
-                          alt={creator.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement
-                            target.onerror = null
-                            target.src = "/api/placeholder?height=100&width=100&query=creator"
-                          }}
-                        />
-                      </div>
-                      <h4 className="text-white font-medium text-center">{creator.name}</h4>
-                      <div className="flex items-center mt-1 text-xs text-gray-400">
-                        <Film size={12} className="mr-1" />
-                        <span>{creator.stats?.videoCount || 0} videos</span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         ) : null}
       </div>

@@ -60,19 +60,12 @@ export default function CategoryPage() {
       setCategoryData(data)
 
       // Set pagination based on API response
-      setCurrentPage(data.pagination?.currentPage || pageNum)
+      setCurrentPage(pageNum) // Always use the requested page number
       setTotalPages(data.pagination?.totalPages || 1)
       
       // Save current page in navigation context
       if (typeof categorySlug === "string") {
         setCategoryPage(categorySlug, pageNum)
-      }
-
-      // Update URL to reflect current page (for direct linking)
-      if (router.isReady && pageNum > 1) {
-        router.push(`/category/${categorySlug}?page=${pageNum}`, undefined, { shallow: true })
-      } else if (router.isReady && pageNum === 1 && router.query.page) {
-        router.push(`/category/${categorySlug}`, undefined, { shallow: true })
       }
     } catch (err) {
       console.error("Error loading category data:", err)
@@ -88,12 +81,31 @@ export default function CategoryPage() {
     }
   }, [slug, currentPage])
 
+  // Separate effect for URL updates
+  useEffect(() => {
+    if (router.isReady && slug && typeof slug === "string" && currentPage > 0) {
+      if (currentPage > 1) {
+        router.push(`/category/${slug}?page=${currentPage}`, undefined, { shallow: true })
+      } else {
+        router.push(`/category/${slug}`, undefined, { shallow: true })
+      }
+    }
+  }, [currentPage, slug, router.isReady])
+
   const handlePageChange = (pageNum: number) => {
     if (!slug || typeof slug !== "string") return
     if (pageNum < 1 || pageNum > totalPages) return
     
-    setCurrentPage(pageNum)
-    // Scroll to top when changing pages - handled in loadCategoryData
+    // Always reload data when changing pages, even if it's the same page
+    if (pageNum !== currentPage) {
+      setCurrentPage(pageNum)
+    } else {
+      // If clicking the same page, force reload the data
+      loadCategoryData(slug, pageNum)
+    }
+    
+    // Scroll to top when changing pages
+    window.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   // Format view count for display
@@ -227,6 +239,9 @@ export default function CategoryPage() {
                     pageNum = currentPage - 2 + i
                   }
 
+                  // Ensure pageNum is valid
+                  if (pageNum < 1 || pageNum > totalPages) return null
+
                   return (
                     <button
                       key={pageNum}
@@ -253,6 +268,20 @@ export default function CategoryPage() {
                     >
                       {totalPages}
                     </button>
+                  </>
+                )}
+
+                {/* Always show page 1 if not already visible and we're not on first few pages */}
+                {totalPages > 5 && currentPage > 3 && (
+                  <>
+                    <button
+                      onClick={() => handlePageChange(1)}
+                      disabled={loading}
+                      className="w-10 h-10 rounded-lg bg-gray-800/70 text-white hover:bg-gray-700/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      1
+                    </button>
+                    <span className="text-gray-500">...</span>
                   </>
                 )}
               </div>
