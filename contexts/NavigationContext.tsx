@@ -8,6 +8,7 @@ type NavigationState = {
     [slug: string]: number; // Store page number for each category by slug
   };
   providerPage: number;
+  providerScrollPosition: number; // Store scroll position for provider page
   // We can add more page tracking here later for other sections
 };
 
@@ -16,6 +17,7 @@ type NavigationContextType = {
   setWebseriesPage: (page: number) => void;
   setCategoryPage: (slug: string, page: number) => void;
   setProviderPage: (page: number) => void;
+  setProviderScrollPosition: (position: number) => void;
   // Add more setters for other sections when needed
 };
 
@@ -23,6 +25,7 @@ const initialState: NavigationState = {
   webseriesPage: 1,
   categoryPage: {},
   providerPage: 1,
+  providerScrollPosition: 0,
 };
 
 const NavigationContext = createContext<NavigationContextType>({
@@ -30,6 +33,7 @@ const NavigationContext = createContext<NavigationContextType>({
   setWebseriesPage: () => {},
   setCategoryPage: () => {},
   setProviderPage: () => {},
+  setProviderScrollPosition: () => {},
 });
 
 export const useNavigation = () => useContext(NavigationContext);
@@ -82,13 +86,21 @@ export const NavigationProvider: React.FC<{ children: ReactNode }> = ({ children
     });
   }, []);
 
+  const setProviderScrollPosition = useCallback((position: number) => {
+    setNavigationState((prev) => ({
+      ...prev,
+      providerScrollPosition: position,
+    }));
+  }, []);
+
   const value = useMemo(() => ({
     navigationState,
     setWebseriesPage,
     setCategoryPage,
     setProviderPage,
+    setProviderScrollPosition,
     // Add more setters as needed
-  }), [navigationState, setWebseriesPage, setCategoryPage, setProviderPage]);
+  }), [navigationState, setWebseriesPage, setCategoryPage, setProviderPage, setProviderScrollPosition]);
 
   return <NavigationContext.Provider value={value}>{children}</NavigationContext.Provider>;
 }; 

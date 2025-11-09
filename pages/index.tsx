@@ -566,7 +566,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
               <SectionTitle 
-                title="Desi Providers" 
+                title="Providers" 
                 subtitle="Fresh content updated daily from our premium sources"
                 icon={TrendingUp}
               />
@@ -580,7 +580,7 @@ export default function HomePage() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+              <div className={`grid gap-4 md:gap-6 ${isCollapsed ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
                 {/* IndianPornHQ Provider Card */}
                 {providerInfo && (
                   <Link
@@ -799,26 +799,28 @@ export default function HomePage() {
         </section>
 
         {/* Browse by Category Section with Pagination */}
-        {providerCategories.length > 0 && (
-          <section ref={browseByCategoryRef} className="py-6 sm:py-8 md:py-12 relative">
-            <div className="container mx-auto px-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
-                <SectionTitle 
-                  title="Browse by Category" 
-                  subtitle={`Explore content by category from all providers • Page ${categoriesPage} of ${Math.ceil(providerCategories.length / 24)}`}
-                  icon={Grid3x3}
-                />
-              </div>
-
-              <CategoryGrid
-                categories={providerCategories.slice((categoriesPage - 1) * 24, categoriesPage * 24)}
-                hasPremiumAccess={hasPremiumAccess}
-                loading={loadingProviderCategories}
-                showProviderBadge={true}
+        <section ref={browseByCategoryRef} className="py-6 sm:py-8 md:py-12 relative">
+          <div className="container mx-auto px-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
+              <SectionTitle 
+                title="Browse by Category" 
+                subtitle={providerCategories.length > 0 
+                  ? `Explore content by category from all providers • Page ${categoriesPage} of ${Math.ceil(providerCategories.length / 24)}`
+                  : "Explore content by category from all providers"
+                }
+                icon={Grid3x3}
               />
+            </div>
 
-              {/* Pagination Controls */}
-              {providerCategories.length > 24 && (
+            <CategoryGrid
+              categories={providerCategories.slice((categoriesPage - 1) * 24, categoriesPage * 24)}
+              hasPremiumAccess={hasPremiumAccess}
+              loading={loadingProviderCategories}
+              showProviderBadge={true}
+            />
+
+            {/* Pagination Controls */}
+            {providerCategories.length > 24 && (
                 <div className="flex justify-center items-center space-x-2 mt-8">
                   <button
                     onClick={() => {
@@ -884,7 +886,6 @@ export default function HomePage() {
               )}
             </div>
           </section>
-        )}
 
 
 

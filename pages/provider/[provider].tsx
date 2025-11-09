@@ -15,7 +15,7 @@ export default function ProviderPage() {
   const router = useRouter()
   const { provider } = router.query
   const providerName = typeof provider === 'string' ? provider : 'indianpornhq'
-  const { navigationState, setProviderPage } = useNavigation()
+  const { navigationState, setProviderPage, setProviderScrollPosition } = useNavigation()
   const { user } = useAuth()
   const { isCollapsed } = useSidebar()
 
@@ -55,6 +55,7 @@ export default function ProviderPage() {
   const initializedRef = React.useRef<boolean>(false)
   const lastCategoryRef = React.useRef<string | null>(null)
   const isLoadingCategoryRef = React.useRef<boolean>(false)
+  const hasCheckedInitialUrl = React.useRef<boolean>(false)
   
   const loadCategoryVideos = useCallback(async (categoryUrl: string, pageNum: number = 1) => {
     // Set flag immediately to prevent regular video loading
@@ -115,19 +116,8 @@ export default function ProviderPage() {
         }
       }
       
-      // Extract slug from category URL for cleaner URLs
-      const urlParts = categoryUrl.split('/').filter((p: string) => p && p.length > 0)
-      const categorySlug = urlParts[urlParts.length - 1] || ''
-      
-      // Update URL with category slug and page if needed
-      const currentUrl = router.asPath
-      const expectedUrl = pageNum > 1 
-        ? `/provider/${provider}?cat=${categorySlug}&page=${pageNum}`
-        : `/provider/${provider}?cat=${categorySlug}`
-      
-      if (currentUrl !== expectedUrl) {
-        router.push(expectedUrl, undefined, { shallow: true })
-      }
+      // Don't update URL here - the URL is already correct from navigation
+      // Updating it causes unnecessary re-renders and can cause redirect issues
     } catch (err) {
       console.error("Error loading category videos:", err)
       setError("Failed to load category videos. Please try again later.")
@@ -227,6 +217,7 @@ export default function ProviderPage() {
         // Track this category load
         lastCategoryRef.current = categoryUrl
         initializedRef.current = true
+        hasCheckedInitialUrl.current = true
         
         // Load category videos with page number
         loadCategoryVideos(categoryUrl, pageNum)
@@ -246,23 +237,28 @@ export default function ProviderPage() {
     }
     
     // Only proceed with regular page loading if no category and not initialized
-    if (!initializedRef.current) {
+    // Mark that we've checked the initial URL to prevent re-initialization
+    if (!initializedRef.current && router.isReady) {
       let initialPage = 1
+      
+      // Determine max pages based on provider
+      const maxPages = providerName === 'fsiblog5' ? 10 : 5
       
       // First priority: URL parameter
       if (router.query.page && !Array.isArray(router.query.page)) {
         const pageNum = parseInt(router.query.page, 10)
-        if (!isNaN(pageNum) && pageNum > 0 && pageNum <= 5) {
+        if (!isNaN(pageNum) && pageNum > 0 && pageNum <= maxPages) {
           initialPage = pageNum
         }
       } 
       // Second priority: navigation state (only read once)
-      else if (navigationState.providerPage > 1 && navigationState.providerPage <= 5) {
+      else if (navigationState.providerPage > 1 && navigationState.providerPage <= maxPages) {
         initialPage = navigationState.providerPage
       }
       
       setCurrentPage(initialPage)
       initializedRef.current = true
+      hasCheckedInitialUrl.current = true
     }
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [router.isReady, router.query.cat, router.query.category, router.query.page, loadCategoryVideos]) // Include loadCategoryVideos in dependencies
@@ -297,9 +293,8 @@ export default function ProviderPage() {
       
       let data;
       if (providerName === 'fsiblog5') {
-        // Fetch FSIBlog videos with page number
-        const pageUrl = page > 1 ? `https://www.fsiblog5.com/page/${page}/` : undefined
-        const response = await fetch(`/api/providers/fsiblog5/videos${pageUrl ? `?page=${encodeURIComponent(pageUrl)}` : ''}`)
+        // Fetch FSIBlog videos using unified API with pagination
+        const response = await fetch(`/api/v2/providers/fsiblog5/videos?page=${page}`)
         data = await response.json()
       } else {
         // Fetch IndianPornHQ videos
@@ -375,6 +370,12 @@ export default function ProviderPage() {
   const urlUpdateRef = React.useRef<boolean>(false)
   
   useEffect(() => {
+    // Skip if we have category in URL - category pages handle their own URLs
+    const hasCategoryInUrl = router.query.cat || router.query.category
+    if (hasCategoryInUrl) {
+      return
+    }
+    
     if (router.isReady && initializedRef.current && currentPage > 0 && !urlUpdateRef.current) {
       const currentUrlPage = router.query.page ? parseInt(router.query.page as string, 10) : 1
       
@@ -394,16 +395,37 @@ export default function ProviderPage() {
         })
       }
     }
-  }, [currentPage, router.isReady, provider, selectedCategory])
+  }, [currentPage, router.isReady, provider, selectedCategory, router.query.cat, router.query.category])
+
+  // Restore scroll position when returning from video page (only once per session)
+  const scrollRestoredRef = useRef(false)
+  useEffect(() => {
+    // Only restore if we have a saved position and haven't restored yet
+    if (!loading && videos.length > 0 && !scrollRestoredRef.current && navigationState.providerScrollPosition > 0) {
+      scrollRestoredRef.current = true
+      setTimeout(() => {
+        window.scrollTo({
+          top: navigationState.providerScrollPosition,
+          behavior: 'smooth'
+        })
+        // Clear the saved position after restoring
+        setProviderScrollPosition(0)
+      }, 100)
+    }
+  }, [loading, videos.length, navigationState.providerScrollPosition, setProviderScrollPosition])
 
   const handlePageChange = useCallback((page: number) => {
     if (page < 1) return
+    
+    // Reset scroll restoration flag when manually changing pages
+    scrollRestoredRef.current = false
     
     // Handle category pagination for FSIBlog and Superporn
     if (selectedCategory) {
       if (providerName === 'fsiblog5' || providerName === 'superporn') {
         // FSIBlog and Superporn categories support pagination
         loadCategoryVideos(selectedCategory, page)
+        // Scroll to top when changing pages
         window.scrollTo({ top: 0, behavior: "smooth" })
       }
       // IndianPornHQ categories don't have pagination - ignore
@@ -421,10 +443,13 @@ export default function ProviderPage() {
     }
   }, [currentPage, totalPages, selectedCategory, providerName, loadCategoryVideos])
 
-  // When clicking on a video, we make sure the current page is saved
+  // When clicking on a video, save current page and scroll position
   const handleVideoClick = useCallback(() => {
     setProviderPage(currentPage)
-  }, [currentPage, setProviderPage])
+    // Save current scroll position
+    const scrollPosition = window.pageYOffset || document.documentElement.scrollTop
+    setProviderScrollPosition(scrollPosition)
+  }, [currentPage, setProviderPage, setProviderScrollPosition])
 
   const getProviderName = (providerName: string) => {
     const names: Record<string, string> = {
@@ -701,6 +726,7 @@ export default function ProviderPage() {
                     pathname: videoUrl,
                     query: videoQuery
                   } : videoUrl + (Object.keys(videoQuery).length > 0 ? `?${new URLSearchParams(videoQuery).toString()}` : '')}
+                  onClick={handleVideoClick}
                   className="group flex flex-col bg-gray-800/40 rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-black/30 hover:shadow-purple-900/20"
                 >
                   <div className="aspect-video relative overflow-hidden">
