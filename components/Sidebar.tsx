@@ -71,10 +71,10 @@ const Sidebar = () => {
       isActive: pathname === "/webseries" || (pathname && pathname.startsWith("/webseries/"))
     },
     {
-      href: "/provider/indianpornhq",
+      href: "/providers",
       icon: Server,
       label: "Providers",
-      isActive: pathname && pathname.startsWith("/provider/")
+      isActive: pathname === "/providers" || (pathname && pathname.startsWith("/provider/"))
     },
   ]
 

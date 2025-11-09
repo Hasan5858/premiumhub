@@ -51,6 +51,16 @@ const PROVIDERS = {
       search: '/search',
       video: '/video'
     }
+  },
+  fsiblog5: {
+    name: 'FSIBlog5',
+    baseUrl: '/api/providers/fsiblog5',
+    endpoints: {
+      videos: '/videos',
+      categories: '/category-videos',
+      search: '/search',
+      video: '/video-by-slug'
+    }
   }
 }
 

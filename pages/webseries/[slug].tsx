@@ -1,5 +1,3 @@
-"use client"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/router"
 import Head from "next/head"
@@ -68,6 +66,10 @@ export default function WebseriesVideoPage() {
         setLoading(true)
         setError(null)
 
+        // Check if we're loading a specific episode/video from query params
+        const episodeId = router.query.episode as string | undefined
+        const videoId = router.query.video as string | undefined
+
         // Fetch video data using the slug
         const data = await fetchWebseriesDetails(slug as string)
 
@@ -75,14 +77,43 @@ export default function WebseriesVideoPage() {
           throw new Error("Failed to load video data")
         }
 
+        // If we have episodes/videos array and a specific episode/video ID requested
+        let selectedVideo = data.video
+        if ((episodeId || videoId) && (data.episodes || data.videos)) {
+          const targetArray = data.episodes || data.videos
+          const targetId = episodeId || videoId
+          
+          // Find the specific episode/video
+          const found = targetArray.find((item: any) => 
+            item.id === targetId || 
+            item.id === `episode-${targetId}` || 
+            item.id === `video-${targetId}` ||
+            (typeof targetId === 'string' && parseInt(targetId) && targetArray[parseInt(targetId) - 1])
+          )
+          
+          if (found) {
+            // Use the found episode/video data
+            selectedVideo = {
+              ...data.video,
+              ...found,
+              // Ensure we use the episode's source/url
+              source: found.source || found.url || data.video.source,
+              url: found.url || found.source || data.video.url,
+              playerIframe: found.playerIframe || data.video.playerIframe,
+              title: found.title || data.video.title,
+              description: found.description || data.video.description,
+            }
+          }
+        }
+
         // Get the iframe source from either location
-        const iframeSrc = extractIframeSrc(data.video.playerIframe || (data as any).playerIframe || "")
+        const iframeSrc = extractIframeSrc(selectedVideo.playerIframe || (data as any).playerIframe || "")
         
         // Process the video data
         const processedData: ProcessedVideoData = {
           ...data,
           video: {
-            ...data.video,
+            ...selectedVideo,
             iframeSrc,
           }
         }
@@ -268,6 +299,88 @@ export default function WebseriesVideoPage() {
                   </div>
                 )}
               </div>
+
+              {/* Episodes Section - Show episodes if available */}
+              {videoData.episodes && videoData.episodes.length > 0 && (
+                <div className="mt-8">
+                  <h2 className="text-xl font-bold text-white mb-4">Episodes</h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {videoData.episodes.map((episode, index) => {
+                      // Generate slug for episode link
+                      const episodeSlug = episode.title 
+                        ? episode.title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').substring(0, 100)
+                        : `episode-${index + 1}`
+                      
+                      return (
+                        <Link
+                          key={episode.id || index}
+                          href={`/webseries/${slug}?episode=${episode.id || index + 1}`}
+                          className="bg-gray-900 rounded-lg overflow-hidden transition-transform hover:scale-105"
+                        >
+                          <div className="aspect-video relative">
+                            <img
+                              src={episode.thumbnail || videoData.video.poster || `/placeholder.svg?height=180&width=320`}
+                              alt={episode.title || `Episode ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            {episode.duration && (
+                              <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                                {episode.duration}
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-2">
+                            <h3 className="text-sm font-medium text-white line-clamp-2">
+                              {episode.title || `Episode ${index + 1}`}
+                            </h3>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Videos Section - Show videos if available (alternative to episodes) */}
+              {videoData.videos && videoData.videos.length > 0 && !videoData.episodes && (
+                <div className="mt-8">
+                  <h2 className="text-xl font-bold text-white mb-4">Videos</h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {videoData.videos.map((video, index) => {
+                      // Generate slug for video link
+                      const videoSlug = video.title 
+                        ? video.title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').substring(0, 100)
+                        : `video-${index + 1}`
+                      
+                      return (
+                        <Link
+                          key={video.id || index}
+                          href={`/webseries/${slug}?video=${video.id || index + 1}`}
+                          className="bg-gray-900 rounded-lg overflow-hidden transition-transform hover:scale-105"
+                        >
+                          <div className="aspect-video relative">
+                            <img
+                              src={video.thumbnail || videoData.video.poster || `/placeholder.svg?height=180&width=320`}
+                              alt={video.title || `Video ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            {video.duration && (
+                              <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                                {video.duration}
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-2">
+                            <h3 className="text-sm font-medium text-white line-clamp-2">
+                              {video.title || `Video ${index + 1}`}
+                            </h3>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Related Content Section */}
               {relatedSeries.length > 0 && (

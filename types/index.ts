@@ -137,5 +137,27 @@ export interface WebseriesDetails {
     playerIframe?: string
     download_link?: string
     duration?: string
+    views?: string
   }
+  // Episodes or videos array for multi-episode webseries
+  episodes?: Array<{
+    id: string
+    title: string
+    thumbnail?: string
+    source: string
+    url: string
+    playerIframe?: string
+    duration?: string
+    description?: string
+  }>
+  videos?: Array<{
+    id: string
+    title: string
+    thumbnail?: string
+    source: string
+    url: string
+    playerIframe?: string
+    duration?: string
+    description?: string
+  }>
 }

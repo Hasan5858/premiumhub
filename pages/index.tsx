@@ -1,7 +1,5 @@
-"use client"
-
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { Play, Clock, ChevronRight, Star, Sparkles, TrendingUp, Grid3x3 } from "lucide-react"
 import HeroSection from "@/components/HeroSection"
@@ -11,6 +9,8 @@ import PremiumBadge from "@/components/PremiumBadge"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSidebar } from "@/contexts/SidebarContext"
 import { hasCacheItem, getCacheItem, setCacheItem } from "@/services/cache"
+import ProviderCategoryGrid from "@/components/ProviderCategoryGrid"
+import CategoryGrid from "@/components/CategoryGrid"
 
 const ViewAllButton = ({ to, children }: { to: string; children: React.ReactNode }) => (
   <Link 
@@ -56,21 +56,38 @@ export default function HomePage() {
   const [webseries, setWebseries] = useState<WebseriesPost[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [providerInfo, setProviderInfo] = useState<any>(null)
-  const [providerCategories, setProviderCategories] = useState<Array<{name: string, url: string, count?: number, thumbnail?: string}>>([])
+  const [fsiblogThumbnail, setFsiblogThumbnail] = useState<string>("/api/placeholder?height=400&width=600&query=fsiblog+desi+content")
+  const [superpornThumbnail, setSuperpornThumbnail] = useState<string>("/api/placeholder?height=400&width=600&query=superporn+content")
+  const [providerCategories, setProviderCategories] = useState<Array<{name: string, url: string, slug?: string, count?: number, thumbnail?: string, provider?: string, isEmpty?: boolean}>>([])
   const [loading, setLoading] = useState(false)
   const [loadingProviderCategories, setLoadingProviderCategories] = useState(false)
+  const [categoriesPage, setCategoriesPage] = useState(1)
   const [error, setError] = useState<string | null>(null)
   const { user } = useAuth()
   const { isCollapsed } = useSidebar()
+  
+  // Ref for Browse by Category section
+  const browseByCategoryRef = useRef<HTMLElement>(null)
 
   // Get responsive grid classes based on sidebar state
   const getGridClasses = () => {
     if (isCollapsed) {
-      // When sidebar is collapsed, show more items
-      return "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7 gap-6"
+      // When sidebar is collapsed, show 5 items per row
+      return "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
     } else {
       // When sidebar is expanded, show 4 items max
       return "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
+    }
+  }
+
+  // Get responsive grid classes for provider categories (2 columns on mobile)
+  const getProviderCategoryGridClasses = () => {
+    if (isCollapsed) {
+      // When sidebar is collapsed, show more items
+      return "grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7 gap-6"
+    } else {
+      // When sidebar is expanded, show 4 items max
+      return "grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
     }
   }
 
@@ -189,6 +206,59 @@ export default function HomePage() {
         hasError = true
       }
 
+      // Load FSIBlog homepage first post thumbnail
+      try {
+        const cacheKey = 'fsiblog-homepage-thumbnail'
+        const CACHE_DURATION = 6 * 60 * 60 * 1000 // 6 hours
+        
+        const cachedThumbnail = getCacheItem<string>(cacheKey)
+        if (cachedThumbnail) {
+          setFsiblogThumbnail(cachedThumbnail)
+        } else {
+          // Fetch FSIBlog homepage videos (no page param means homepage)
+          const response = await fetch('/api/providers/fsiblog5/videos')
+          const data = await response.json()
+          
+          if (data.success && data.videos && data.videos.length > 0) {
+            const firstVideo = data.videos[0]
+            if (firstVideo.thumbnail) {
+              const proxiedThumbnail = `https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(firstVideo.thumbnail)}`
+              setFsiblogThumbnail(proxiedThumbnail)
+              setCacheItem(cacheKey, proxiedThumbnail, CACHE_DURATION)
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading FSIBlog thumbnail:", err)
+        // Keep default placeholder if fetch fails
+      }
+
+      // Load Superporn homepage first post thumbnail
+      try {
+        const cacheKey = 'superporn-homepage-thumbnail'
+        const CACHE_DURATION = 6 * 60 * 60 * 1000 // 6 hours
+        
+        const cachedThumbnail = getCacheItem<string>(cacheKey)
+        if (cachedThumbnail) {
+          setSuperpornThumbnail(cachedThumbnail)
+        } else {
+          // Fetch Superporn homepage videos
+          const response = await fetch('/api/v2/providers/superporn/videos?page=1')
+          const data = await response.json()
+          
+          if (data.success && data.data && data.data.length > 0) {
+            const firstVideo = data.data[0]
+            if (firstVideo.thumbnail) {
+              setSuperpornThumbnail(firstVideo.thumbnail)
+              setCacheItem(cacheKey, firstVideo.thumbnail, CACHE_DURATION)
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading Superporn thumbnail:", err)
+        // Keep default placeholder if fetch fails
+      }
+
       // Only show error if there was an actual error AND all data types failed to load
       if (hasError && webseries.length === 0 && categories.length === 0) {
         setError("Failed to load content. Please try again later.")
@@ -207,24 +277,44 @@ export default function HomePage() {
       if (providerCategories.length === 0 && !loadingProviderCategories) {
         setLoadingProviderCategories(true)
         try {
-          const result = await fetchAllProviderCategories()
-          if (result.success && result.data && result.data.length > 0) {
-            // Filter only IndianPornHQ categories
-            const indianPornHQCategories = result.data.filter(
-              (cat: any) => cat.provider === 'indianpornhq' || !cat.provider
-            )
-            
-            if (indianPornHQCategories.length > 0) {
-              // Limit to top 24 categories for better performance
-              const topCategories = indianPornHQCategories.slice(0, 24)
+          // Fetch categories from all providers using unified API
+          const providers = ['fsiblog5', 'indianpornhq', 'superporn']
+          const allCategoriesPromises = providers.map(async (providerId) => {
+            try {
+              const response = await fetch(`/api/v2/providers/${providerId}/categories`)
+              const result = await response.json()
               
-              // Set categories immediately with placeholder, then fetch thumbnails progressively
-              setProviderCategories(topCategories)
+              if (result.success && result.data) {
+                return result.data.map((cat: any) => ({
+                  name: cat.name,
+                  url: cat.url,
+                  slug: cat.slug,
+                  count: cat.count,
+                  provider: providerId,
+                  thumbnail: cat.thumbnail // Superporn already has thumbnails
+                }))
+              }
+              return []
+            } catch (err) {
+              console.error(`Error fetching categories from ${providerId}:`, err)
+              return []
+            }
+          })
+
+          const categoriesArrays = await Promise.all(allCategoriesPromises)
+          let allCategories = categoriesArrays.flat()
+          
+          if (allCategories.length > 0) {
+            // Set ALL categories immediately (not just 24)
+            setProviderCategories(allCategories)
               
-              // Fetch thumbnails for each category in batches (to avoid overwhelming the API)
-              const batchSize = 4
-              for (let i = 0; i < topCategories.length; i += batchSize) {
-                const batch = topCategories.slice(i, i + batchSize)
+            // Fetch thumbnails only for categories without them (FSIBlog and IndianPornHQ)
+            const catsWithoutThumbs = allCategories.filter((cat: any) => !cat.thumbnail)
+            const batchSize = 6
+              
+              // Fetch thumbnails for categories without them
+              for (let i = 0; i < catsWithoutThumbs.length; i += batchSize) {
+                const batch = catsWithoutThumbs.slice(i, i + batchSize)
                 
                 const thumbnails = await Promise.allSettled(
                   batch.map(async (category: any) => {
@@ -242,11 +332,13 @@ export default function HomePage() {
                         }
                       }
                       
-                      // Cache miss - fetch first video from category to get thumbnail
-                      const categoryVideos = await fetchIndianPornHQCategoryVideos(category.url)
+                      // Cache miss - fetch first video from category to get thumbnail using unified API
+                      const response = await fetch(`/api/v2/providers/${category.provider}/category/${category.slug || category.url}`)
+                      const categoryVideos = await response.json()
+                      
                       if (categoryVideos.success && categoryVideos.data && categoryVideos.data.length > 0) {
                         const firstVideo = categoryVideos.data[0]
-                        const thumbnail = firstVideo.thumbnail_url || firstVideo.thumbnail
+                        const thumbnail = firstVideo.thumbnail || firstVideo.thumbnail_url
                         
                         // Cache the thumbnail for future use
                         if (thumbnail) {
@@ -272,25 +364,36 @@ export default function HomePage() {
                   const updated = [...prev]
                   thumbnails.forEach((result, idx) => {
                     if (result.status === 'fulfilled' && result.value) {
-                      const categoryIndex = i + idx
-                      if (updated[categoryIndex] && result.value.thumbnail) {
-                        updated[categoryIndex] = {
-                          ...updated[categoryIndex],
-                          thumbnail: result.value.thumbnail
+                      const categoryIndex = updated.findIndex((c: any) => 
+                        c.url === result.value.category.url && c.provider === result.value.category.provider
+                      )
+                      if (categoryIndex !== -1) {
+                        // Mark as empty if no thumbnail found (no videos in category)
+                        if (!result.value.thumbnail) {
+                          updated[categoryIndex] = {
+                            ...updated[categoryIndex],
+                            isEmpty: true
+                          }
+                        } else {
+                          updated[categoryIndex] = {
+                            ...updated[categoryIndex],
+                            thumbnail: result.value.thumbnail,
+                            isEmpty: false
+                          }
                         }
                       }
                     }
                   })
-                  return updated
+                  // Filter out empty categories
+                  return updated.filter((cat: any) => !cat.isEmpty)
                 })
                 
                 // Small delay between batches to avoid rate limiting
-                if (i + batchSize < topCategories.length) {
+                if (i + batchSize < catsWithoutThumbs.length) {
                   await new Promise(resolve => setTimeout(resolve, 200))
                 }
               }
             }
-          }
         } catch (err) {
           console.error("Error loading provider categories:", err)
         } finally {
@@ -458,95 +561,15 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* IndianPornHQ Categories Section */}
-        {providerCategories.length > 0 && (
-          <section className="py-6 sm:py-8 md:py-12 relative">
-            <div className="container mx-auto px-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
-                <SectionTitle 
-                  title="Browse by Category" 
-                  subtitle="Explore IndianPornHQ content by category"
-                  icon={Grid3x3}
-                />
-                <ViewAllButton to="/provider/indianpornhq">Browse All Videos</ViewAllButton>
-              </div>
-
-              {loadingProviderCategories ? (
-                <div className="flex justify-center py-12">
-                  <div className="relative">
-                    <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-200 border-t-purple-600"></div>
-                    <div className="absolute inset-0 rounded-full border-4 border-purple-400/20"></div>
-                  </div>
-                </div>
-              ) : (
-                <div className={getGridClasses()}>
-                  {providerCategories.map((category, index) => {
-                    // Extract slug from URL for routing (e.g., "babes" from "https://www.indianpornhq.com/babes/")
-                    const urlParts = category.url.split('/').filter((p: string) => p && p.length > 0)
-                    const slug = urlParts[urlParts.length - 1] || category.name.toLowerCase().replace(/\s+/g, '-')
-                    
-                    return (
-                      <Link
-                        key={category.url || index}
-                        href={`/provider/indianpornhq?cat=${slug}`}
-                        className="group relative aspect-square rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.05] shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/40 border border-gray-700/30 hover:border-purple-500/50"
-                        style={{ 
-                          animationDelay: `${index * 80}ms`,
-                          animation: 'fadeInUp 0.6s ease-out forwards'
-                        }}
-                      >
-                        <img
-                          src={
-                            category.thumbnail ||
-                            `/api/placeholder?height=400&width=400&query=${encodeURIComponent(category.name) || "category"}%20videos`
-                          }
-                          alt={category.name}
-                          className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-75 group-hover:brightness-90"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement
-                            target.onerror = null
-                            target.src = `/api/placeholder?height=400&width=400&query=${encodeURIComponent(
-                              category.name,
-                            )}%20videos`
-                          }}
-                        />
-
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent opacity-80 group-hover:opacity-60 transition-opacity duration-500" />
-
-                        {/* Premium badge if not premium user */}
-                        {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
-
-                        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                          <h3 className="text-sm sm:text-lg font-bold text-white group-hover:text-purple-300 transition-colors duration-300 mb-2">
-                            {category.name}
-                          </h3>
-                          <div className="bg-gradient-to-r from-purple-600/90 to-purple-700/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-medium shadow-lg border border-white/20">
-                            {category.count ? `${category.count.toLocaleString()} videos` : 'View videos'}
-                          </div>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
         {/* Desi Provider Section */}
         <section className="py-6 sm:py-8 md:py-12 relative">
           <div className="container mx-auto px-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
               <SectionTitle 
-                title="Desi Provider" 
+                title="Desi Providers" 
                 subtitle="Fresh content updated daily from our premium sources"
                 icon={TrendingUp}
               />
-              {providerInfo && (
-                <ViewAllButton to={`/provider/${providerInfo.provider}`}>
-                  Browse {providerInfo.totalVideos} Videos
-                </ViewAllButton>
-              )}
             </div>
 
             {loading ? (
@@ -556,17 +579,79 @@ export default function HomePage() {
                   <div className="absolute inset-0 rounded-full border-4 border-purple-400/20"></div>
                 </div>
               </div>
-            ) : providerInfo ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Provider Card */}
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                {/* IndianPornHQ Provider Card */}
+                {providerInfo && (
+                  <Link
+                    href={`/provider/${providerInfo.provider}`}
+                    className="group relative flex flex-col bg-gradient-to-br from-gray-800/60 to-gray-900/60 backdrop-blur-sm rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:bg-gradient-to-br hover:from-gray-700/60 hover:to-gray-800/60 shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/30 border border-gray-700/30 hover:border-purple-500/30"
+                  >
+                    <div className="aspect-video w-full relative overflow-hidden">
+                      <img
+                        src={providerInfo.thumbnail}
+                        alt={providerInfo.name}
+                        className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-90 group-hover:brightness-100"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.onerror = null
+                          target.src = "/api/placeholder?height=400&width=600&query=provider"
+                        }}
+                      />
+
+                      {/* Enhanced gradient overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
+
+                      {/* Premium badge if not premium user */}
+                      {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
+
+                      {/* Enhanced play button overlay */}
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500">
+                        <div className="relative">
+                          <div className="w-20 h-20 bg-gradient-to-r from-purple-600 to-purple-700 backdrop-blur-lg rounded-full flex items-center justify-center transform scale-75 group-hover:scale-100 transition-all duration-500 shadow-2xl shadow-purple-600/50 border-2 border-white/20">
+                            <Play className="w-10 h-10 text-white fill-current ml-1" />
+                          </div>
+                          <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-400 to-purple-500 opacity-20 animate-ping"></div>
+                        </div>
+                      </div>
+
+                      {/* Video count badge */}
+                      <div className="absolute bottom-3 right-3 bg-black/90 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full flex items-center shadow-xl border border-white/10">
+                        <TrendingUp size={16} className="mr-2 text-purple-400" />
+                        {providerInfo.totalVideos} Videos
+                      </div>
+                    </div>
+
+                    <div className="p-6 flex-grow flex flex-col">
+                      <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300 leading-tight mb-2">
+                        {providerInfo.name}
+                      </h3>
+                      <p className="text-gray-400 text-sm mb-4 line-clamp-2">
+                        {providerInfo.description}
+                      </p>
+
+                      <div className="flex items-center justify-between mt-auto">
+                        <span className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg">
+                          Daily Updates
+                        </span>
+                        <div className="flex items-center text-yellow-400">
+                          <Star size={16} className="fill-current" />
+                          <span className="text-sm ml-1 text-gray-300">PREMIUM</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                )}
+
+                {/* FSIBlog Provider Card */}
                 <Link
-                  href={`/provider/${providerInfo.provider}`}
+                  href="/provider/fsiblog5"
                   className="group relative flex flex-col bg-gradient-to-br from-gray-800/60 to-gray-900/60 backdrop-blur-sm rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:bg-gradient-to-br hover:from-gray-700/60 hover:to-gray-800/60 shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/30 border border-gray-700/30 hover:border-purple-500/30"
                 >
                   <div className="aspect-video w-full relative overflow-hidden">
                     <img
-                      src={providerInfo.thumbnail}
-                      alt={providerInfo.name}
+                      src={fsiblogThumbnail}
+                      alt="FSIBlog"
                       className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-90 group-hover:brightness-100"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement
@@ -591,19 +676,19 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* Video count badge */}
-                    <div className="absolute bottom-3 right-3 bg-black/90 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full flex items-center shadow-xl border border-white/10">
-                      <TrendingUp size={16} className="mr-2 text-purple-400" />
-                      {providerInfo.totalVideos} Videos
+                    {/* NEW badge */}
+                    <div className="absolute bottom-3 right-3 bg-gradient-to-r from-green-500 to-emerald-600 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full flex items-center shadow-xl border border-white/10 font-semibold">
+                      <Sparkles size={16} className="mr-2" />
+                      NEW
                     </div>
                   </div>
 
                   <div className="p-6 flex-grow flex flex-col">
                     <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300 leading-tight mb-2">
-                      {providerInfo.name}
+                      FSIBlog
                     </h3>
                     <p className="text-gray-400 text-sm mb-4 line-clamp-2">
-                      {providerInfo.description}
+                      Premium Indian adult content with videos, galleries, and stories. Fresh updates daily.
                     </p>
 
                     <div className="flex items-center justify-between mt-auto">
@@ -618,139 +703,190 @@ export default function HomePage() {
                   </div>
                 </Link>
 
-                {/* Quick Stats Card */}
-                <div className="bg-gradient-to-br from-gray-800/40 to-gray-900/40 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/30">
-                  <h4 className="text-lg font-semibold text-white mb-4 flex items-center">
-                    <TrendingUp className="w-5 h-5 text-purple-400 mr-2" />
-                    Provider Stats
-                  </h4>
-                  
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400">Total Videos</span>
-                      <span className="text-white font-semibold">{providerInfo.totalVideos}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400">Content Type</span>
-                      <span className="text-purple-400 font-semibold">Desi Content</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400">Update Frequency</span>
-                      <span className="text-green-400 font-semibold">Daily</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-400">Quality</span>
-                      <span className="text-yellow-400 font-semibold">HD/4K</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 pt-4 border-t border-gray-700/50">
-                    <p className="text-xs text-gray-500">
-                      Last updated: {new Date(providerInfo.lastUpdated).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="bg-gradient-to-r from-gray-800/40 to-gray-900/40 backdrop-blur-sm rounded-2xl p-8 border border-gray-700/30">
-                  <p className="text-gray-400">Provider information not available at the moment.</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Categories with Modern Grid Design */}
-        <section className="py-6 sm:py-8 md:py-12 relative">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
-              <SectionTitle 
-                title="Popular Categories" 
-                subtitle="Explore content by your favorite genres"
-                icon={TrendingUp}
-              />
-              <ViewAllButton to="/categories">View All Categories</ViewAllButton>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center py-12">
-                <div className="relative">
-                  <div className="animate-spin rounded-full h-16 w-16 border-4 border-purple-200 border-t-purple-600"></div>
-                  <div className="absolute inset-0 rounded-full border-4 border-purple-400/20"></div>
-                </div>
-              </div>
-            ) : categories.length > 0 ? (
-              <div className={getGridClasses()}>
-                {categories.map((category, index) => (
-                  <Link
-                    key={category.slug}
-                    href={`/category/${category.slug}`}
-                    className="group relative aspect-square rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.05] shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/40 border border-gray-700/30 hover:border-purple-500/50"
-                    style={{ 
-                      animationDelay: `${index * 80}ms`,
-                      animation: 'fadeInUp 0.6s ease-out forwards'
-                    }}
-                  >
+                {/* Superporn Provider Card */}
+                <Link
+                  href="/provider/superporn"
+                  className="group relative flex flex-col bg-gradient-to-br from-gray-800/60 to-gray-900/60 backdrop-blur-sm rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:bg-gradient-to-br hover:from-gray-700/60 hover:to-gray-800/60 shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/30 border border-gray-700/30 hover:border-purple-500/30"
+                >
+                  <div className="aspect-video w-full relative overflow-hidden">
                     <img
-                      src={
-                        category.imageUrl ||
-                        `/api/placeholder?height=400&width=400&query=${encodeURIComponent(category.name) || "category"}%20videos`
-                      }
-                      alt={category.name}
-                      className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-75 group-hover:brightness-90"
+                      src={superpornThumbnail}
+                      alt="Superporn"
+                      className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-90 group-hover:brightness-100"
                       onError={(e) => {
                         const target = e.target as HTMLImageElement
                         target.onerror = null
-                        target.src = `/api/placeholder?height=400&width=400&query=${encodeURIComponent(
-                          category.name,
-                        )}%20videos`
+                        target.src = "/api/placeholder?height=400&width=600&query=superporn+content"
                       }}
                     />
 
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent opacity-80 group-hover:opacity-60 transition-opacity duration-500" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
 
-                    {/* Premium badge if not premium user */}
                     {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
 
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                      <h3 className="text-sm sm:text-lg font-bold text-white group-hover:text-purple-300 transition-colors duration-300 mb-2">
-                        {category.name}
-                      </h3>
-                      <div className="bg-gradient-to-r from-purple-600/90 to-purple-700/90 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-xs font-medium shadow-lg border border-white/20">
-                        {category.videoCount.toLocaleString()} videos
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500">
+                      <div className="relative">
+                        <div className="w-20 h-20 bg-gradient-to-r from-purple-600 to-purple-700 backdrop-blur-lg rounded-full flex items-center justify-center transform scale-75 group-hover:scale-100 transition-all duration-500 shadow-2xl shadow-purple-600/50 border-2 border-white/20">
+                          <Play className="w-10 h-10 text-white fill-current ml-1" />
+                        </div>
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-400 to-purple-500 opacity-20 animate-ping"></div>
                       </div>
                     </div>
-                  </Link>
-                ))}
 
-                {/* Enhanced View All Categories Card */}
-                <Link
-                  href="/categories"
-                  className="group relative aspect-square rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.05] bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-sm flex items-center justify-center shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/40 border border-purple-500/30 hover:border-purple-400/50"
-                >
-                  <div className="text-center">
-                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-purple-600 to-purple-700 rounded-full flex items-center justify-center mx-auto mb-3 transform group-hover:scale-110 transition-transform duration-300 shadow-lg shadow-purple-600/50">
-                      <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                    <div className="absolute bottom-3 right-3 bg-gradient-to-r from-pink-500 to-purple-600 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full flex items-center shadow-xl border border-white/10 font-semibold">
+                      <Sparkles size={16} className="mr-2" />
+                      HOT
                     </div>
-                    <h3 className="text-lg sm:text-xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300">
-                      View All
+                  </div>
+
+                  <div className="p-6 flex-grow flex flex-col">
+                    <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300 leading-tight mb-2">
+                      Superporn
                     </h3>
+                    <p className="text-gray-400 text-sm mb-4 line-clamp-2">
+                      Premium adult entertainment with extensive HD video collection and daily updates.
+                    </p>
+
+                    <div className="flex items-center justify-between mt-auto">
+                      <span className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg">
+                        Daily Updates
+                      </span>
+                      <div className="flex items-center text-yellow-400">
+                        <Star size={16} className="fill-current" />
+                        <span className="text-sm ml-1 text-gray-300">PREMIUM</span>
+                      </div>
+                    </div>
                   </div>
                 </Link>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="bg-gradient-to-r from-gray-800/40 to-gray-900/40 backdrop-blur-sm rounded-2xl p-8 border border-gray-700/30">
-                  <p className="text-gray-400">No categories available at the moment.</p>
-                </div>
+
+                {/* All Providers Link */}
+                <Link
+                  href="/categories"
+                  className="group relative flex flex-col bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-sm rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.02] shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/40 border border-purple-500/30 hover:border-purple-400/50"
+                >
+                  <div className="aspect-video w-full relative overflow-hidden bg-gradient-to-br from-purple-900/40 to-pink-900/40">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="w-20 h-20 bg-gradient-to-r from-purple-600 to-purple-700 rounded-full flex items-center justify-center mx-auto mb-4 transform group-hover:scale-110 transition-transform duration-300 shadow-lg shadow-purple-600/50">
+                          <Grid3x3 className="w-10 h-10 text-white" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300">
+                          View All
+                        </h3>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 flex-grow flex flex-col">
+                    <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300 leading-tight mb-2">
+                      Explore Categories
+                    </h3>
+                    <p className="text-gray-400 text-sm mb-4 line-clamp-2">
+                      Browse all categories from all providers and discover more content.
+                    </p>
+
+                    <div className="flex items-center justify-center mt-auto">
+                      <span className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-2 rounded-full text-sm font-medium shadow-lg flex items-center">
+                        Browse All
+                        <ChevronRight className="w-4 h-4 ml-2" />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
               </div>
             )}
           </div>
         </section>
+
+        {/* Browse by Category Section with Pagination */}
+        {providerCategories.length > 0 && (
+          <section ref={browseByCategoryRef} className="py-6 sm:py-8 md:py-12 relative">
+            <div className="container mx-auto px-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8 gap-3 sm:gap-0">
+                <SectionTitle 
+                  title="Browse by Category" 
+                  subtitle={`Explore content by category from all providers • Page ${categoriesPage} of ${Math.ceil(providerCategories.length / 24)}`}
+                  icon={Grid3x3}
+                />
+              </div>
+
+              <CategoryGrid
+                categories={providerCategories.slice((categoriesPage - 1) * 24, categoriesPage * 24)}
+                hasPremiumAccess={hasPremiumAccess}
+                loading={loadingProviderCategories}
+                showProviderBadge={true}
+              />
+
+              {/* Pagination Controls */}
+              {providerCategories.length > 24 && (
+                <div className="flex justify-center items-center space-x-2 mt-8">
+                  <button
+                    onClick={() => {
+                      setCategoriesPage(prev => Math.max(1, prev - 1))
+                      browseByCategoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }}
+                    disabled={categoriesPage === 1}
+                    className="p-2 rounded-lg bg-gray-800/70 text-white hover:bg-purple-600/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  
+                  <div className="flex items-center space-x-1">
+                    {Array.from({ length: Math.ceil(providerCategories.length / 24) }, (_, i) => i + 1).map(pageNum => {
+                      const totalPages = Math.ceil(providerCategories.length / 24)
+                      const showPage = 
+                        pageNum <= 2 || 
+                        pageNum >= totalPages - 1 || 
+                        (pageNum >= categoriesPage - 1 && pageNum <= categoriesPage + 1)
+                      
+                      if (!showPage && pageNum === 3 && categoriesPage > 4) {
+                        return <span key={pageNum} className="text-gray-500">...</span>
+                      }
+                      if (!showPage && pageNum === totalPages - 2 && categoriesPage < totalPages - 3) {
+                        return <span key={pageNum} className="text-gray-500">...</span>
+                      }
+                      if (!showPage) return null
+
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => {
+                            setCategoriesPage(pageNum)
+                            browseByCategoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }}
+                          className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            categoriesPage === pageNum
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-800/70 text-gray-300 hover:bg-gray-700/80'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setCategoriesPage(prev => Math.min(Math.ceil(providerCategories.length / 24), prev + 1))
+                      browseByCategoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }}
+                    disabled={categoriesPage >= Math.ceil(providerCategories.length / 24)}
+                    className="p-2 rounded-lg bg-gray-800/70 text-white hover:bg-purple-600/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+
 
       </div>
 

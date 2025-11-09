@@ -1,5 +1,3 @@
-"use client"
-
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/router"
 import Head from "next/head"
@@ -32,6 +30,9 @@ export default function ProviderVideoPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showTags, setShowTags] = useState(false)
+  const [iframeLoading, setIframeLoading] = useState(true)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const artPlayerRef = useRef<Artplayer | null>(null)
 
   // Normalize provider to string (handle array case from router.query)
@@ -121,31 +122,66 @@ export default function ProviderVideoPage() {
           // If viewing from a category, we need to pass the category URL to the API
           // We'll need to reconstruct it from the category slug
           if (categorySlug && typeof categorySlug === 'string') {
-            const categoryUrl = `https://www.indianpornhq.com/${categorySlug}/`
+            // Set category URL based on provider
+            let categoryUrl = ''
+            if (provider === 'fsiblog5') {
+              categoryUrl = `https://www.fsiblog5.com/category/${categorySlug}/`
+            } else {
+              categoryUrl = `https://www.indianpornhq.com/${categorySlug}/`
+            }
             apiUrl += `?cat_url=${encodeURIComponent(categoryUrl)}`
           }
           
           const response = await fetch(apiUrl)
           data = await response.json()
+          
+          // Normalize FSIBlog response structure (uses 'video' instead of 'data')
+          if (data.success && data.video && !data.data) {
+            data.data = data.video
+          }
         } else {
           // Use original ID-based API endpoint
           data = await fetchProviderVideoDetails(provider as string, id as string)
         }
 
         if (!data || !data.success) {
-          throw new Error("Failed to load video data")
+          console.error("API returned unsuccessful response:", data)
+          throw new Error(data?.error || "Failed to load video data")
         }
 
         // Ensure we have the data object
         if (!data.data) {
+          console.error("No video data in response:", data)
           throw new Error("No video data received")
         }
 
+        // Log video data for debugging
+        console.log("Video data loaded:", {
+          title: data.data.title,
+          type: data.data.type,
+          has_video_url: !!data.data.video_url,
+          has_embed_url: !!data.data.embed_url,
+          has_gallery: !!data.data.galleryImages,
+          gallery_count: data.data.galleryImages?.length || 0,
+          video_url: data.data.video_url,
+          embed_url: data.data.embed_url
+        })
+
         setVideoData(data)
+        setIframeLoading(true) // Reset iframe loading state for new video
 
       } catch (err) {
         console.error("Error loading video:", err)
-        setError("Failed to load video. Please try again later.")
+        const errorMessage = err instanceof Error ? err.message : "Failed to load video. Please try again later."
+        
+        // Provide more specific error messages
+        if (errorMessage.includes("404") || errorMessage.includes("not found")) {
+          setError("Video not found. It may have been removed or the link is incorrect.")
+        } else if (errorMessage.includes("Network") || errorMessage.includes("fetch")) {
+          setError("Network error. Please check your connection and try again.")
+        } else {
+          setError(errorMessage)
+        }
       } finally {
         setLoading(false)
       }
@@ -164,11 +200,57 @@ export default function ProviderVideoPage() {
     }
   }, [])
 
+  // Lightbox functions for gallery images
+  const openLightbox = (index: number) => {
+    setCurrentImageIndex(index)
+    setLightboxOpen(true)
+    document.body.style.overflow = 'hidden' // Prevent background scrolling
+  }
+
+  const closeLightbox = () => {
+    setLightboxOpen(false)
+    document.body.style.overflow = 'unset'
+  }
+
+  const nextImage = () => {
+    if (videoData?.data?.galleryImages) {
+      setCurrentImageIndex((prev) => 
+        prev === videoData.data.galleryImages.length - 1 ? 0 : prev + 1
+      )
+    }
+  }
+
+  const prevImage = () => {
+    if (videoData?.data?.galleryImages) {
+      setCurrentImageIndex((prev) => 
+        prev === 0 ? videoData.data.galleryImages.length - 1 : prev - 1
+      )
+    }
+  }
+
+  // Handle keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!lightboxOpen) return
+      
+      if (e.key === 'Escape') {
+        closeLightbox()
+      } else if (e.key === 'ArrowRight') {
+        nextImage()
+      } else if (e.key === 'ArrowLeft') {
+        prevImage()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [lightboxOpen, currentImageIndex])
 
   const getProviderName = (providerName: string) => {
     const names: Record<string, string> = {
       'indianpornhq': 'IndianPornHQ',
-      'desi': 'Desi Provider'
+      'desi': 'Desi Provider',
+      'fsiblog5': 'FSIBlog'
     }
     return names[providerName] || providerName
   }
@@ -362,8 +444,79 @@ export default function ProviderVideoPage() {
             <div className="space-y-6">
               {/* Video Player Card - Main Content */}
               <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-700/30 overflow-hidden">
-                {/* Video Player Section */}
-                <div className="relative w-full aspect-video bg-black">
+                {/* Conditional rendering: Video Player OR Image Gallery */}
+                {videoData.data?.type === 'sex-gallery' && videoData.data?.galleryImages && videoData.data.galleryImages.length > 0 ? (
+                  /* Image Gallery Section */
+                  <div className="p-6 md:p-8">
+                    <div className="mb-6">
+                      <h2 className="text-xl font-bold text-white mb-4 flex items-center">
+                        <Film size={24} className="mr-2 text-purple-400" />
+                        Image Gallery ({videoData.data.galleryImages.length} images)
+                      </h2>
+                    </div>
+                    
+                    <MembershipCheck
+                      fallbackComponent={
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                          {/* Show only first 4 images as preview for non-premium */}
+                          {videoData.data.galleryImages.slice(0, 4).map((imgUrl: string, index: number) => (
+                            <div key={index} className="relative aspect-square rounded-xl overflow-hidden group">
+                              <img
+                                src={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(imgUrl)}`}
+                                alt={`Gallery image ${index + 1}`}
+                                className="w-full h-full object-cover blur-md grayscale"
+                              />
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                <div className="text-center">
+                                  <Lock size={32} className="text-white mb-2 mx-auto" />
+                                  <p className="text-white text-sm font-medium">Premium Only</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="col-span-2 md:col-span-3 lg:col-span-4 mt-4 text-center">
+                            <Link
+                              href="/membership"
+                              className="inline-flex items-center px-8 py-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white rounded-xl font-semibold transition-all duration-200 shadow-lg hover:shadow-purple-500/50 transform hover:scale-105"
+                            >
+                              <Lock size={20} className="mr-2" />
+                              Upgrade to View All {videoData.data.galleryImages.length} Images
+                            </Link>
+                          </div>
+                        </div>
+                      }
+                    >
+                      {/* Full gallery for premium users */}
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {videoData.data.galleryImages.map((imgUrl: string, index: number) => (
+                          <button
+                            key={index}
+                            onClick={() => openLightbox(index)}
+                            className="relative aspect-square rounded-xl overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <img
+                              src={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(imgUrl)}`}
+                              alt={`Gallery image ${index + 1}`}
+                              className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                              <div className="absolute bottom-2 left-2 right-2">
+                                <p className="text-white text-sm font-medium">Click to view full size</p>
+                              </div>
+                            </div>
+                            {/* Image number badge */}
+                            <div className="absolute top-2 right-2 bg-black/70 text-white px-2 py-1 rounded-lg text-xs font-medium">
+                              {index + 1}/{videoData.data.galleryImages.length}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </MembershipCheck>
+                  </div>
+                ) : (
+                  /* Video Player Section */
+                  <div className="relative w-full aspect-video bg-black">
                   <MembershipCheck
                     fallbackComponent={
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-900/95 to-gray-800/95 backdrop-blur-sm p-8 text-center">
@@ -384,14 +537,17 @@ export default function ProviderVideoPage() {
                     }
                   >
                     <div className="absolute inset-0">
-                          {/* Check if it's a direct video URL for ArtPlayer */}
-                          {(isIndianPornHQ && videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
-                           (videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ? (
+                          {/* Priority 1: Use direct video URLs with ArtPlayer */}
+                          {((isIndianPornHQ && videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
+                           (provider === 'fsiblog5' && videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
+                           (videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i))) ? (
                             // Use ArtPlayer for direct video URLs
                             <ArtPlayer
                               option={{
-                                url: videoData.data.video_url,
-                                poster: videoData.data?.thumbnail_url || '',
+                                url: videoData.data.videoUrl || videoData.data.video_url,
+                                poster: provider === 'fsiblog5' && (videoData.data?.thumbnail || videoData.data?.thumbnail_url)
+                                  ? `https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.thumbnail || videoData.data.thumbnail_url)}`
+                                  : (videoData.data?.thumbnail || videoData.data?.thumbnail_url || ''),
                                 title: videoData.data?.title || formattedTitle,
                                 volume: 0.5,
                                 isLive: false,
@@ -418,7 +574,8 @@ export default function ProviderVideoPage() {
                                 theme: '#8b5cf6',
                                 lang: 'en',
                                 moreVideoAttr: {
-                                  crossOrigin: 'anonymous',
+                                  // Don't use crossOrigin for FSIBlog videos (no CORS support)
+                                  ...(provider !== 'fsiblog5' && { crossOrigin: 'anonymous' }),
                                   preload: 'metadata',
                                   style: 'width: 100%; height: 100%; object-fit: cover;',
                                 },
@@ -436,15 +593,61 @@ export default function ProviderVideoPage() {
                                 bottom: 0,
                               }}
                             />
+                          ) : isIndianPornHQ && videoData.data?.xhamster_embed_url ? (
+                            // Priority 2: Use xHamster worker proxy (ad-free player)
+                            <>
+                              {iframeLoading && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                                  <div className="text-center">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-500/20 border-t-purple-500 mx-auto mb-4"></div>
+                                    <p className="text-gray-400">Loading player...</p>
+                                  </div>
+                                </div>
+                              )}
+                              <iframe
+                                src={videoData.data.xhamster_embed_url}
+                                className="w-full h-full"
+                                frameBorder="0"
+                                allowFullScreen
+                                scrolling="no"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                onError={(e) => {
+                                  console.error("Worker player failed to load:", videoData.data?.xhamster_embed_url)
+                                  setIframeLoading(false)
+                                }}
+                                onLoad={() => {
+                                  console.log("Worker player loaded successfully:", videoData.data?.xhamster_embed_url)
+                                  setIframeLoading(false)
+                                }}
+                              ></iframe>
+                            </>
                           ) : isIndianPornHQ && videoData.data?.embed_url ? (
-                            // Use embed URL if available
-                            <iframe
-                              src={videoData.data.embed_url}
-                              className="w-full h-full"
-                              frameBorder="0"
-                              allowFullScreen
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            ></iframe>
+                            // Priority 3: Use Indian PornHQ embed URL (fallback)
+                            <>
+                              {iframeLoading && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black">
+                                  <div className="text-center">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-500/20 border-t-purple-500 mx-auto mb-4"></div>
+                                    <p className="text-gray-400">Loading player...</p>
+                                  </div>
+                                </div>
+                              )}
+                              <iframe
+                                src={videoData.data.embed_url}
+                                className="w-full h-full"
+                                frameBorder="0"
+                                allowFullScreen
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                onError={(e) => {
+                                  console.error("Iframe failed to load:", videoData.data?.embed_url)
+                                  setIframeLoading(false)
+                                }}
+                                onLoad={() => {
+                                  console.log("Iframe loaded successfully:", videoData.data?.embed_url)
+                                  setIframeLoading(false)
+                                }}
+                              ></iframe>
+                            </>
                           ) : isIndianPornHQ && videoData.data?.video_url ? (
                             // Use video_url directly with player prefix (encode for query params)
                             <iframe
@@ -488,7 +691,8 @@ export default function ProviderVideoPage() {
                           )}
                         </div>
                       </MembershipCheck>
-                </div>
+                  </div>
+                )}
 
                 {/* Video Info Section */}
                 <div className="p-6 md:p-8">
@@ -581,6 +785,94 @@ export default function ProviderVideoPage() {
           )}
         </div>
       </div>
+
+      {/* Lightbox Modal for Gallery Images */}
+      {lightboxOpen && videoData?.data?.galleryImages && (
+        <div className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center">
+          {/* Close button */}
+          <button
+            onClick={closeLightbox}
+            className="absolute top-4 right-4 z-10 p-3 bg-black/50 hover:bg-black/70 rounded-full transition-all duration-200 group"
+            aria-label="Close lightbox"
+          >
+            <svg className="w-6 h-6 text-white group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Image counter */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-4 py-2 bg-black/70 rounded-full">
+            <span className="text-white font-medium">
+              {currentImageIndex + 1} / {videoData.data.galleryImages.length}
+            </span>
+          </div>
+
+          {/* Previous button */}
+          {videoData.data.galleryImages.length > 1 && (
+            <button
+              onClick={prevImage}
+              className="absolute left-4 z-10 p-3 bg-black/50 hover:bg-black/70 rounded-full transition-all duration-200 group"
+              aria-label="Previous image"
+            >
+              <svg className="w-6 h-6 text-white group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+
+          {/* Main image */}
+          <div className="max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center p-4">
+            <img
+              src={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.galleryImages[currentImageIndex])}`}
+              alt={`Gallery image ${currentImageIndex + 1}`}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          {/* Next button */}
+          {videoData.data.galleryImages.length > 1 && (
+            <button
+              onClick={nextImage}
+              className="absolute right-4 z-10 p-3 bg-black/50 hover:bg-black/70 rounded-full transition-all duration-200 group"
+              aria-label="Next image"
+            >
+              <svg className="w-6 h-6 text-white group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+
+          {/* Click outside to close */}
+          <div
+            className="absolute inset-0 -z-10"
+            onClick={closeLightbox}
+          />
+
+          {/* Download button */}
+          <a
+            href={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.galleryImages[currentImageIndex])}`}
+            download
+            target="_blank"
+            rel="noopener noreferrer"
+            className="absolute bottom-4 right-4 z-10 p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-all duration-200 group"
+            aria-label="Download image"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <svg className="w-6 h-6 text-white group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </a>
+
+          {/* Keyboard hints */}
+          <div className="absolute bottom-4 left-4 z-10 px-4 py-2 bg-black/70 rounded-lg">
+            <p className="text-white text-sm">
+              <span className="font-medium">ESC</span> to close • 
+              <span className="font-medium"> ←→</span> to navigate
+            </p>
+          </div>
+        </div>
+      )}
     </>
   )
 }

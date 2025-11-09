@@ -461,7 +461,7 @@ export async function fetchWebseriesDetails(slugOrUrl: string): Promise<Webserie
       // It's a slug, try to construct the original URL
       // For webseries, we'll use the slug to fetch from the API
       // The API should handle slug to URL conversion
-      url = `https://uncutdesi.org/${slugOrUrl}`
+      url = `https://uncutdesi.co.com/${slugOrUrl}`
     }
 
     // Encode the URL for the API request
@@ -480,6 +480,47 @@ export async function fetchWebseriesDetails(slugOrUrl: string): Promise<Webserie
     // If the response includes playerIframe, make sure it's passed through
     if (data.video && !data.video.playerIframe && data.playerIframe) {
       data.video.playerIframe = data.playerIframe
+    }
+    
+    // Check if the response has episodes/videos array and ensure each has unique source/url
+    // The API might return multiple episodes but they could have the same source if extraction failed
+    if (data.episodes && Array.isArray(data.episodes)) {
+      // Ensure each episode has a unique identifier and source
+      data.episodes = data.episodes.map((episode: any, index: number) => {
+        // If episode doesn't have source/url, try to extract from playerIframe or other fields
+        if (!episode.source && !episode.url && episode.playerIframe) {
+          const iframeMatch = episode.playerIframe.match(/src=["']([^"']+)["']/)
+          if (iframeMatch && iframeMatch[1]) {
+            episode.source = iframeMatch[1]
+            episode.url = iframeMatch[1]
+          }
+        }
+        // Ensure each episode has a unique ID if missing
+        if (!episode.id) {
+          episode.id = `episode-${index + 1}`
+        }
+        return episode
+      })
+    }
+    
+    // If response has videos array instead of episodes
+    if (data.videos && Array.isArray(data.videos)) {
+      // Ensure each video has a unique identifier and source
+      data.videos = data.videos.map((video: any, index: number) => {
+        // If video doesn't have source/url, try to extract from playerIframe or other fields
+        if (!video.source && !video.url && video.playerIframe) {
+          const iframeMatch = video.playerIframe.match(/src=["']([^"']+)["']/)
+          if (iframeMatch && iframeMatch[1]) {
+            video.source = iframeMatch[1]
+            video.url = iframeMatch[1]
+          }
+        }
+        // Ensure each video has a unique ID if missing
+        if (!video.id) {
+          video.id = `video-${index + 1}`
+        }
+        return video
+      })
     }
     
     // Cache the results

@@ -17,6 +17,7 @@ export interface ScrapedVideoDetails {
   duration: string
   video_url?: string
   embed_url?: string
+  xhamster_embed_url?: string  // Direct xHamster embed URL
   tags?: string[]
   views?: string
   upload_date?: string
@@ -175,7 +176,32 @@ export function scrapeVideoDetails(html: string): ScrapedVideoDetails | null {
 
     // Extract embed URL
     const embedMatch = /<iframe[^>]*src=["']([^"']+)["']/.exec(html)
-    const embed_url = embedMatch ? embedMatch[1] : null
+    let embed_url = embedMatch ? embedMatch[1] : null
+    
+    // Make embed URL absolute if it's relative
+    if (embed_url && !embed_url.startsWith('http')) {
+      if (embed_url.startsWith('//')) {
+        embed_url = `https:${embed_url}`
+      } else if (embed_url.startsWith('/')) {
+        embed_url = `https://www.indianpornhq.com${embed_url}`
+      } else {
+        embed_url = `https://${embed_url}`
+      }
+    }
+
+    // Try to extract xHamster video ID from the embed URL for direct playback
+    let xhamster_embed_url = undefined
+    if (embed_url) {
+      // Pattern: extract video ID from query parameter (e.g., ?i=xhLmQdD)
+      const videoIdMatch = /[?&]i=([a-zA-Z0-9]+)/.exec(embed_url)
+      if (videoIdMatch && videoIdMatch[1]) {
+        const videoId = videoIdMatch[1]
+        // Use worker proxy to extract video and remove ads
+        // Format: https://xhamster.premiumhub.workers.dev/https://xhamster.com/videos/{videoId}
+        xhamster_embed_url = `https://xhamster.premiumhub.workers.dev/https://xhamster.com/videos/${videoId}`
+        console.log(`[scraper] Extracted xHamster worker URL: ${xhamster_embed_url}`)
+      }
+    }
 
     // Extract tags from category links (IndianPornHQ structure)
     const tags: string[] = []
@@ -214,6 +240,7 @@ export function scrapeVideoDetails(html: string): ScrapedVideoDetails | null {
         duration: duration || 'Unknown',
         video_url: video_url || undefined,
         embed_url: embed_url || undefined,
+        xhamster_embed_url: xhamster_embed_url || undefined,  // Include direct xHamster embed
         tags: tags.length > 0 ? tags : undefined,
         views: views || undefined,
         upload_date: upload_date || undefined,

@@ -1,5 +1,3 @@
-"use client"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/router"
 import Head from "next/head"
@@ -202,9 +200,20 @@ export default function VideoPage() {
       const pageParam = webseriesPage ? `?page=${webseriesPage}` : ""
       return `/webseries/${webseriesSlug}${pageParam}`
     } else if (from === "category" && router.query.categorySlug) {
-      // Back to category page
-      const categoryPage = router.query.categoryPage ? `?page=${router.query.categoryPage}` : ""
-      return `/category/${router.query.categorySlug}${categoryPage}`
+      // Check if this came from a provider page
+      if (router.query.provider) {
+        // Back to provider category page
+        const providerName = router.query.provider
+        const categorySlug = router.query.categorySlug
+        const pageParam = router.query.categoryPage && router.query.categoryPage !== '1' 
+          ? `&page=${router.query.categoryPage}` 
+          : ""
+        return `/provider/${providerName}?cat=${categorySlug}${pageParam}`
+      } else {
+        // Back to standalone category page
+        const categoryPage = router.query.categoryPage ? `?page=${router.query.categoryPage}` : ""
+        return `/category/${router.query.categorySlug}${categoryPage}`
+      }
     } else {
       // Default fallback to homepage
       return "/"
