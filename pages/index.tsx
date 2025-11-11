@@ -1,7 +1,7 @@
 import type React from "react"
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
-import { Play, Clock, ChevronRight, Star, Sparkles, TrendingUp, Grid3x3 } from "lucide-react"
+import { Play, Clock, ChevronRight, Star, Sparkles, TrendingUp, Grid3x3, Zap } from "lucide-react"
 import HeroSection from "@/components/HeroSection"
 import { fetchLatestWebseries, fetchCategories, fetchProviderInfo, fetchIndianPornHQVideos, fetchAllProviderCategories, fetchIndianPornHQCategoryVideos } from "@/services/api"
 import type { WebseriesPost, Category } from "@/types"
@@ -54,10 +54,13 @@ const SectionTitle = ({
 
 export default function HomePage() {
   const [webseries, setWebseries] = useState<WebseriesPost[]>([])
+  const [webxseriesVideos, setWebxseriesVideos] = useState<any[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [providerInfo, setProviderInfo] = useState<any>(null)
   const [fsiblogThumbnail, setFsiblogThumbnail] = useState<string>("/api/placeholder?height=400&width=600&query=fsiblog+desi+content")
+  const [kamababaThumbnail, setKamababaThumbnail] = useState<string>("/api/placeholder?height=400&width=600&query=kamababa+desi+content")
   const [superpornThumbnail, setSuperpornThumbnail] = useState<string>("/api/placeholder?height=400&width=600&query=superporn+content")
+  const [webxseriesThumbnail, setWebxseriesThumbnail] = useState<string>("/api/placeholder?height=400&width=600&query=webxseries+ott+content")
   const [providerCategories, setProviderCategories] = useState<Array<{name: string, url: string, slug?: string, count?: number, thumbnail?: string, provider?: string, isEmpty?: boolean}>>([])
   const [loading, setLoading] = useState(false)
   const [loadingProviderCategories, setLoadingProviderCategories] = useState(false)
@@ -176,6 +179,23 @@ export default function HomePage() {
         }
       }
 
+      // Fetch WebXSeries videos (15 videos)
+      try {
+        console.log("Fetching WebXSeries videos...")
+        const webxseriesResponse = await fetch('/api/v2/providers/webxseries/videos?page=1&limit=15')
+        const webxseriesData = await webxseriesResponse.json()
+        
+        if (webxseriesData.success && webxseriesData.data) {
+          console.log(`Loaded ${webxseriesData.data.length} WebXSeries videos`)
+          setWebxseriesVideos(webxseriesData.data)
+        } else {
+          console.warn("No WebXSeries videos found")
+          setWebxseriesVideos([])
+        }
+      } catch (err) {
+        console.error("Error loading WebXSeries videos:", err)
+        setWebxseriesVideos([])
+      }
 
       try {
         // Fetch categories from page 1
@@ -256,6 +276,64 @@ export default function HomePage() {
         }
       } catch (err) {
         console.error("Error loading Superporn thumbnail:", err)
+        // Keep default placeholder if fetch fails
+      }
+
+      // Load KamaBaba homepage first post thumbnail
+      try {
+        const cacheKey = 'kamababa-homepage-thumbnail'
+        const CACHE_DURATION = 6 * 60 * 60 * 1000 // 6 hours
+        
+        const cachedThumbnail = getCacheItem<string>(cacheKey)
+        if (cachedThumbnail) {
+          setKamababaThumbnail(cachedThumbnail)
+        } else {
+          // Fetch KamaBaba homepage videos
+          const response = await fetch('/api/providers/kamababa/videos')
+          const data = await response.json()
+          
+          if (data.success && data.videos && data.videos.length > 0) {
+            const firstVideo = data.videos[0]
+            if (firstVideo.thumbnail) {
+              setKamababaThumbnail(firstVideo.thumbnail)
+              setCacheItem(cacheKey, firstVideo.thumbnail, CACHE_DURATION)
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading KamaBaba thumbnail:", err)
+        // Keep default placeholder if fetch fails
+      }
+
+      // Load WebXSeries homepage first post thumbnail
+      try {
+        const cacheKey = 'webxseries-homepage-thumbnail'
+        const CACHE_DURATION = 6 * 60 * 60 * 1000 // 6 hours
+        
+        const cachedThumbnail = getCacheItem<string>(cacheKey)
+        if (cachedThumbnail) {
+          console.log('Using cached WebXSeries thumbnail')
+          setWebxseriesThumbnail(cachedThumbnail)
+        } else {
+          // Fetch WebXSeries homepage videos
+          console.log('Fetching WebXSeries thumbnail from API...')
+          const response = await fetch('/api/v2/providers/webxseries/videos?page=1&limit=1')
+          const data = await response.json()
+          
+          if (data.success && data.data && data.data.length > 0) {
+            const firstVideo = data.data[0]
+            const thumbnail = firstVideo.thumbnail || firstVideo.thumbnailUrl
+            if (thumbnail) {
+              console.log('WebXSeries thumbnail loaded:', thumbnail)
+              setWebxseriesThumbnail(thumbnail)
+              setCacheItem(cacheKey, thumbnail, CACHE_DURATION)
+            }
+          } else {
+            console.warn('No WebXSeries videos found for thumbnail')
+          }
+        }
+      } catch (err) {
+        console.error("Error loading WebXSeries thumbnail:", err)
         // Keep default placeholder if fetch fails
       }
 
@@ -409,16 +487,63 @@ export default function HomePage() {
     loadData()
   }, [])
 
-  // Transform webseries posts to VideoCard format
-  const transformedWebseries = webseries.map((post) => ({
-    id: post.id,
-    title: post.title,
-    thumbnail: post.thumbnail,
-    duration: post.duration,
-    year: new Date().getFullYear(),
-    category: post.quality,
-    link: post.link,
-  }))
+  // Merge and interleave webseries from both sources
+  const getMergedWebseries = () => {
+    // Transform old webseries posts
+    const oldWebseries = webseries.map((post) => ({
+      id: post.id,
+      title: post.title,
+      thumbnail: post.thumbnail,
+      duration: post.duration,
+      year: new Date().getFullYear(),
+      category: post.quality,
+      link: post.link,
+      source: 'webseries', // Mark source
+      badge: '🎬 Web Series', // Badge for old system
+    }))
+
+    // Transform WebXSeries videos
+    const newWebxseries = webxseriesVideos.map((video) => ({
+      id: video.id || video.slug,
+      title: video.title,
+      thumbnail: video.thumbnail || video.thumbnailUrl,
+      duration: video.duration || 'Unknown',
+      year: new Date().getFullYear(),
+      category: video.categories?.[0] || 'OTT',
+      link: `/provider/webxseries/video/${video.slug}`,
+      source: 'webxseries', // Mark source
+      badge: '📺 OTT Platform', // Badge for WebXSeries
+    }))
+
+    // Interleave both sources for variety (e.g., 2 old, 1 new, 2 old, 1 new...)
+    const merged: any[] = []
+    let oldIndex = 0
+    let newIndex = 0
+    
+    // Take up to 10 from old webseries and 10 from webxseries (20 total)
+    const maxOld = Math.min(oldWebseries.length, 10)
+    const maxNew = Math.min(newWebxseries.length, 10)
+    
+    while (merged.length < 20 && (oldIndex < maxOld || newIndex < maxNew)) {
+      // Add 2 from old webseries
+      if (oldIndex < maxOld) {
+        merged.push(oldWebseries[oldIndex++])
+      }
+      if (oldIndex < maxOld && merged.length < 20) {
+        merged.push(oldWebseries[oldIndex++])
+      }
+      
+      // Add 1 from webxseries
+      if (newIndex < maxNew && merged.length < 20) {
+        merged.push(newWebxseries[newIndex++])
+      }
+    }
+    
+    return merged
+  }
+
+  // Get merged webseries
+  const transformedWebseries = getMergedWebseries()
 
   // Get the first webseries for hero section
   const heroWebseries = webseries[0] && {
@@ -515,6 +640,15 @@ export default function HomePage() {
 
                       {/* Premium badge if not premium user */}
                       {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
+
+                      {/* Source Badge - distinguish between old webseries and webxseries */}
+                      <div className={`absolute top-3 right-3 backdrop-blur-md text-white text-xs px-3 py-1.5 rounded-full flex items-center shadow-xl border border-white/10 font-semibold ${
+                        video.source === 'webxseries' 
+                          ? 'bg-gradient-to-r from-cyan-500/90 to-blue-600/90' 
+                          : 'bg-gradient-to-r from-purple-500/90 to-pink-600/90'
+                      }`}>
+                        {video.badge}
+                      </div>
 
                       {/* Enhanced play button overlay */}
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500">
@@ -698,6 +832,126 @@ export default function HomePage() {
                       <div className="flex items-center text-yellow-400">
                         <Star size={16} className="fill-current" />
                         <span className="text-sm ml-1 text-gray-300">PREMIUM</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* KamaBaba Provider Card */}
+                <Link
+                  href="/provider/kamababa"
+                  className="group relative flex flex-col bg-gradient-to-br from-gray-800/60 to-gray-900/60 backdrop-blur-sm rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:bg-gradient-to-br hover:from-gray-700/60 hover:to-gray-800/60 shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-900/30 border border-gray-700/30 hover:border-purple-500/30"
+                >
+                  <div className="aspect-video w-full relative overflow-hidden">
+                    <img
+                      src={kamababaThumbnail}
+                      alt="KamaBaba"
+                      className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-90 group-hover:brightness-100"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement
+                        target.onerror = null
+                        target.src = "/api/placeholder?height=400&width=600&query=provider"
+                      }}
+                    />
+
+                    {/* Enhanced gradient overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
+
+                    {/* Premium badge if not premium user */}
+                    {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
+
+                    {/* Enhanced play button overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500">
+                      <div className="relative">
+                        <div className="w-20 h-20 bg-gradient-to-r from-purple-600 to-purple-700 backdrop-blur-lg rounded-full flex items-center justify-center transform scale-75 group-hover:scale-100 transition-all duration-500 shadow-2xl shadow-purple-600/50 border-2 border-white/20">
+                          <Play className="w-10 h-10 text-white fill-current ml-1" />
+                        </div>
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-400 to-purple-500 opacity-20 animate-ping"></div>
+                      </div>
+                    </div>
+
+                    {/* TRENDING badge */}
+                    <div className="absolute bottom-3 right-3 bg-gradient-to-r from-blue-500 to-cyan-600 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full flex items-center shadow-xl border border-white/10 font-semibold">
+                      <TrendingUp size={16} className="mr-2" />
+                      TRENDING
+                    </div>
+                  </div>
+
+                  <div className="p-6 flex-grow flex flex-col">
+                    <h3 className="text-xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300 leading-tight mb-2">
+                      KamaBaba
+                    </h3>
+                    <p className="text-gray-400 text-sm mb-4 line-clamp-2">
+                      Premium desi content with high-quality videos and regular updates for your entertainment.
+                    </p>
+
+                    <div className="flex items-center justify-between mt-auto">
+                      <span className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg">
+                        Daily Updates
+                      </span>
+                      <div className="flex items-center text-yellow-400">
+                        <Star size={16} className="fill-current" />
+                        <span className="text-sm ml-1 text-gray-300">PREMIUM</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* WebXSeries Provider Card */}
+                <Link
+                  href="/provider/webxseries"
+                  className="group relative flex flex-col bg-gradient-to-br from-gray-800/60 to-gray-900/60 backdrop-blur-sm rounded-2xl overflow-hidden transition-all duration-500 hover:scale-[1.02] hover:bg-gradient-to-br hover:from-gray-700/60 hover:to-gray-800/60 shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-cyan-900/30 border border-gray-700/30 hover:border-cyan-500/30"
+                >
+                  <div className="aspect-video w-full relative overflow-hidden">
+                    <img
+                      src={webxseriesThumbnail}
+                      alt="WebXSeries"
+                      className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-90 group-hover:brightness-100"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement
+                        target.onerror = null
+                        target.src = "/api/placeholder?height=400&width=600&query=webxseries+ott"
+                      }}
+                    />
+
+                    {/* Enhanced gradient overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-40 transition-opacity duration-500" />
+
+                    {/* Premium badge if not premium user */}
+                    {!hasPremiumAccess && <PremiumBadge className="top-3 left-3 bg-gradient-to-r from-yellow-400 to-orange-500" />}
+
+                    {/* Enhanced play button overlay */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500">
+                      <div className="relative">
+                        <div className="w-20 h-20 bg-gradient-to-r from-cyan-500 to-blue-600 backdrop-blur-lg rounded-full flex items-center justify-center transform scale-75 group-hover:scale-100 transition-all duration-500 shadow-2xl shadow-cyan-600/50 border-2 border-white/20">
+                          <Play className="w-10 h-10 text-white fill-current ml-1" />
+                        </div>
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 opacity-20 animate-ping"></div>
+                      </div>
+                    </div>
+
+                    {/* NEW badge */}
+                    <div className="absolute bottom-3 right-3 bg-gradient-to-r from-cyan-500 to-teal-600 backdrop-blur-md text-white text-sm px-4 py-2 rounded-full flex items-center shadow-xl border border-white/10 font-semibold">
+                      <Zap size={16} className="mr-2" />
+                      NEW
+                    </div>
+                  </div>
+
+                  <div className="p-6 flex-grow flex flex-col">
+                    <h3 className="text-xl font-bold text-white group-hover:text-cyan-300 transition-colors duration-300 leading-tight mb-2">
+                      WebXSeries
+                    </h3>
+                    <p className="text-gray-400 text-sm mb-4 line-clamp-2">
+                      Multiple OTT platforms with web series episodes and latest releases in HD quality.
+                    </p>
+
+                    <div className="flex items-center justify-between mt-auto">
+                      <span className="bg-gradient-to-r from-cyan-600 to-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg">
+                        OTT Platform
+                      </span>
+                      <div className="flex items-center text-yellow-400">
+                        <Star size={16} className="fill-current" />
+                        <span className="text-sm ml-1 text-gray-300">NEW</span>
                       </div>
                     </div>
                   </div>

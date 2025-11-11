@@ -56,6 +56,8 @@ export default function ProviderCategoryGrid({
           ? { name: 'FSIBlog', color: 'from-emerald-500/80 to-green-600/80' }
           : provider === 'superporn'
           ? { name: 'Superporn', color: 'from-purple-500/80 to-pink-600/80' }
+          : provider === 'kamababa'
+          ? { name: 'KamaBaba', color: 'from-rose-500/80 to-pink-600/80' }
           : { name: 'IndianPornHQ', color: 'from-blue-500/80 to-indigo-600/80' }
         
         const href = `/provider/${provider}?cat=${category.slug || slug}`

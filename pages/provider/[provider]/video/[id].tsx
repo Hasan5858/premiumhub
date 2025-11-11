@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/router"
 import Head from "next/head"
-import { ArrowLeft, Clock, Eye, Lock, Film, User, Tag, ChevronUp, ChevronDown } from "lucide-react"
+import { ArrowLeft, Clock, Eye, Lock, Film, User, Tag, ChevronUp, ChevronDown, Search, X } from "lucide-react"
 import Link from "next/link"
 import { fetchProviderVideoDetails } from "@/services/api"
 import { useNavigation } from "@/contexts/NavigationContext"
@@ -33,6 +33,8 @@ export default function ProviderVideoPage() {
   const [iframeLoading, setIframeLoading] = useState(true)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const artPlayerRef = useRef<Artplayer | null>(null)
 
   // Normalize provider to string (handle array case from router.query)
@@ -109,8 +111,44 @@ export default function ProviderVideoPage() {
           !id.includes('%')
 
         let data
-        if (isSlug) {
-          // Use slug-based API endpoint
+        
+        // Providers that should use the unified API
+        const unifiedProviders = ['fsiblog5', 'indianpornhq', 'superporn', 'kamababa', 'webxseries']
+        const useUnifiedApi = unifiedProviders.includes(providerName)
+        
+        if (isSlug && useUnifiedApi) {
+          // Use unified API endpoint
+          const baseUrl = typeof window !== 'undefined' 
+            ? window.location.origin 
+            : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+          
+          // Check if we came from a category and pass the category slug
+          const categorySlug = router.query.cat
+          let apiUrl = `${baseUrl}/api/v2/providers/${provider}/video/${id}`
+          
+          // If viewing from a category, pass the category slug as a query parameter
+          if (categorySlug && typeof categorySlug === 'string') {
+            apiUrl += `?categorySlug=${encodeURIComponent(categorySlug)}`
+          }
+          
+          const response = await fetch(apiUrl)
+          data = await response.json()
+          
+          // The unified API returns data directly, but we need to wrap it
+          // to match the expected structure
+          if (data.success && data.data) {
+            // Already in correct format
+          } else if (data.success && !data.data) {
+            // Wrap the result in data property if needed
+            const videoData = { ...data }
+            delete videoData.success
+            data = {
+              success: true,
+              data: videoData
+            }
+          }
+        } else if (isSlug) {
+          // Use legacy slug-based API endpoint for older providers
           const baseUrl = typeof window !== 'undefined' 
             ? window.location.origin 
             : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
@@ -405,16 +443,95 @@ export default function ProviderVideoPage() {
 
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Back button - Modern design */}
-          <button
-            onClick={handleBackClick}
-            className="group mb-6 inline-flex items-center text-gray-300 hover:text-white transition-all duration-200 font-medium"
-          >
-            <div className="mr-2 p-1.5 rounded-lg bg-gray-800/50 group-hover:bg-purple-600/20 transition-colors">
-              <ArrowLeft size={18} className="group-hover:translate-x-[-2px] transition-transform" />
+          {/* Navigation buttons - Back and Search */}
+          <div className="mb-6 flex items-center justify-between">
+            {/* Back button - Modern design */}
+            <button
+              onClick={handleBackClick}
+              className="group inline-flex items-center text-gray-300 hover:text-white transition-all duration-200 font-medium"
+            >
+              <div className="mr-2 p-1.5 rounded-lg bg-gray-800/50 group-hover:bg-purple-600/20 transition-colors">
+                <ArrowLeft size={18} className="group-hover:translate-x-[-2px] transition-transform" />
+              </div>
+              <span>{getBackButtonText()}</span>
+            </button>
+
+            {/* Search button - Modern design */}
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="group inline-flex items-center text-gray-300 hover:text-white transition-all duration-200 font-medium"
+            >
+              <div className="p-1.5 rounded-lg bg-gray-800/50 group-hover:bg-purple-600/20 transition-colors">
+                <Search size={18} className="group-hover:scale-110 transition-transform" />
+              </div>
+            </button>
+          </div>
+
+          {/* Search Modal */}
+          {searchOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center">
+              {/* Backdrop */}
+              <div
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => {
+                  setSearchOpen(false)
+                  setSearchQuery('')
+                }}
+              />
+              {/* Modal */}
+              <div className="relative z-10 w-full max-w-2xl mx-4 sm:mx-auto">
+                <div className="bg-gray-900 rounded-2xl border border-gray-700/50 shadow-2xl overflow-hidden">
+                  {/* Modal Header */}
+                  <div className="flex items-center justify-between p-6 border-b border-gray-700/30">
+                    <h3 className="text-xl font-bold text-white">Search Videos</h3>
+                    <button
+                      onClick={() => {
+                        setSearchOpen(false)
+                        setSearchQuery('')
+                      }}
+                      className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+                    >
+                      <X size={20} className="text-gray-400 hover:text-white transition-colors" />
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className="p-6">
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        placeholder="Enter search query..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && searchQuery.trim()) {
+                            router.push(`/search?q=${encodeURIComponent(searchQuery)}`)
+                            setSearchOpen(false)
+                            setSearchQuery('')
+                          }
+                        }}
+                        autoFocus
+                        className="flex-1 px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-purple-500/50 focus:bg-gray-800 transition-colors"
+                      />
+                      <button
+                        onClick={() => {
+                          if (searchQuery.trim()) {
+                            router.push(`/search?q=${encodeURIComponent(searchQuery)}`)
+                            setSearchOpen(false)
+                            setSearchQuery('')
+                          }
+                        }}
+                        disabled={!searchQuery.trim()}
+                        className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-purple-500/50 transform hover:scale-105 disabled:hover:scale-100"
+                      >
+                        Search
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <span>{getBackButtonText()}</span>
-          </button>
+          )}
 
           {/* Error message - Modern alert */}
           {error && (
@@ -540,11 +657,17 @@ export default function ProviderVideoPage() {
                           {/* Priority 1: Use direct video URLs with ArtPlayer */}
                           {((isIndianPornHQ && videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
                            (provider === 'fsiblog5' && videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
+                           (provider === 'kamababa' && videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
+                           (provider === 'webxseries' && videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
                            (videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i))) ? (
                             // Use ArtPlayer for direct video URLs
                             <ArtPlayer
                               option={{
-                                url: videoData.data.videoUrl || videoData.data.video_url,
+                                // FSIBlog needs proxying through worker, but Kamababa and WebXSeries CDN URLs are direct
+                                url: provider === 'fsiblog5' && videoData.data.videoUrl
+                                  ? `https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.videoUrl)}`
+                                  : (videoData.data.videoUrl || videoData.data.video_url),
+                                // FSIBlog thumbnails need proxying, Kamababa and WebXSeries thumbnails are already direct/proxied
                                 poster: provider === 'fsiblog5' && (videoData.data?.thumbnail || videoData.data?.thumbnail_url)
                                   ? `https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.thumbnail || videoData.data.thumbnail_url)}`
                                   : (videoData.data?.thumbnail || videoData.data?.thumbnail_url || ''),
@@ -574,8 +697,9 @@ export default function ProviderVideoPage() {
                                 theme: '#8b5cf6',
                                 lang: 'en',
                                 moreVideoAttr: {
-                                  // Don't use crossOrigin for FSIBlog videos (no CORS support)
-                                  ...(provider !== 'fsiblog5' && { crossOrigin: 'anonymous' }),
+                                  // Only use crossOrigin for providers that properly support CORS
+                                  // FSIBlog, Kamababa, and WebXSeries don't need crossOrigin attribute
+                                  ...(provider !== 'fsiblog5' && provider !== 'kamababa' && provider !== 'webxseries' && { crossOrigin: 'anonymous' }),
                                   preload: 'metadata',
                                   style: 'width: 100%; height: 100%; object-fit: cover;',
                                 },
@@ -593,6 +717,34 @@ export default function ProviderVideoPage() {
                                 bottom: 0,
                               }}
                             />
+                          ) : (provider === 'webxseries' || provider === 'superporn') && videoData.data?.embedUrl && !videoData.data?.videoUrl ? (
+                            // WebXSeries and Superporn use embed URLs
+                            <>
+                              {iframeLoading && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                                  <div className="text-center">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-500/20 border-t-purple-500 mx-auto mb-4"></div>
+                                    <p className="text-gray-400">Loading player...</p>
+                                  </div>
+                                </div>
+                              )}
+                              <iframe
+                                src={videoData.data.embedUrl}
+                                className="w-full h-full"
+                                frameBorder="0"
+                                allowFullScreen
+                                scrolling="no"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                onError={(e) => {
+                                  console.error("Embed player failed to load:", videoData.data?.embedUrl)
+                                  setIframeLoading(false)
+                                }}
+                                onLoad={() => {
+                                  console.log("Embed player loaded successfully:", videoData.data?.embedUrl)
+                                  setIframeLoading(false)
+                                }}
+                              ></iframe>
+                            </>
                           ) : isIndianPornHQ && videoData.data?.xhamster_embed_url ? (
                             // Priority 2: Use xHamster worker proxy (ad-free player)
                             <>
@@ -760,6 +912,43 @@ export default function ProviderVideoPage() {
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Related Videos Section */}
+                  {videoData.data?.relatedVideos && videoData.data.relatedVideos.length > 0 && (
+                    <div className="mt-6 p-6 bg-gray-800/30 backdrop-blur-sm rounded-2xl border border-gray-700/30">
+                      <h2 className="text-lg font-bold text-white mb-4 flex items-center">
+                        <Film size={20} className="mr-2 text-purple-400" />
+                        Related Videos ({videoData.data.relatedVideos.length})
+                      </h2>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {videoData.data.relatedVideos.map((relatedVideo: any) => (
+                          <Link
+                            key={relatedVideo.id}
+                            href={`/provider/${provider}/video/${relatedVideo.slug}${categorySlug ? `?cat=${categorySlug}` : ''}`}
+                            className="group block"
+                          >
+                            <div className="relative aspect-video rounded-xl overflow-hidden mb-2">
+                              <img
+                                src={relatedVideo.thumbnail || '/api/placeholder?height=180&width=320&query=video'}
+                                alt={relatedVideo.title}
+                                className="w-full h-full object-cover transition-all duration-300 group-hover:scale-110"
+                                loading="lazy"
+                              />
+                              {relatedVideo.duration && (
+                                <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-xs text-white font-medium">
+                                  {relatedVideo.duration}
+                                </div>
+                              )}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                            </div>
+                            <h3 className="text-sm text-gray-300 group-hover:text-white font-medium line-clamp-2 transition-colors">
+                              {relatedVideo.title}
+                            </h3>
+                          </Link>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

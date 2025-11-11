@@ -3,6 +3,7 @@ import Head from "next/head"
 import { Grid3x3, Search } from "lucide-react"
 import { getCacheItem, setCacheItem } from "@/services/cache"
 import { useAuth } from "@/contexts/AuthContext"
+import { useSidebar } from "@/contexts/SidebarContext"
 import CategoryGrid from "@/components/CategoryGrid"
 
 interface ProviderCategory {
@@ -23,6 +24,7 @@ export default function CategoriesPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const categoriesPerPage = 24 // Show 24 categories per page (nice grid layout)
   const { user } = useAuth()
+  const { isCollapsed } = useSidebar() // Get sidebar state
 
   const hasPremiumAccess =
     user &&
@@ -60,14 +62,47 @@ export default function CategoriesPage() {
       }
 
       // Fetch categories from all providers using unified API
-      const providers = ['fsiblog5', 'indianpornhq', 'superporn']
+      const providers = ['fsiblog5', 'indianpornhq', 'superporn', 'kamababa', 'webxseries']
       const allCategoriesPromises = providers.map(async (providerId) => {
         try {
-          const response = await fetch(`/api/v2/providers/${providerId}/categories`)
+          const apiUrl = `/api/v2/providers/${providerId}/categories`
+          console.log(`[Categories] Fetching from ${providerId} at ${apiUrl}...`)
+          const response = await fetch(apiUrl, {
+            cache: 'no-store', // Disable caching
+            headers: {
+              'Cache-Control': 'no-cache',
+            }
+          })
+          
+          if (!response.ok) {
+            console.error(`[Categories] ${providerId} HTTP error:`, response.status, response.statusText)
+            return []
+          }
+          
           const result = await response.json()
           
+          console.log(`[Categories] ${providerId} response:`, result.success ? `${result.data?.length || 0} categories` : result.error)
+          
+          if (!result.success) {
+            console.error(`[Categories] ${providerId} API error:`, result.error)
+          }
+          
           if (result.success && result.data) {
-            return result.data.map((cat: any) => ({
+            // Filter out special page types that aren't real categories
+            const filteredData = result.data.filter((cat: any) => {
+              const name = cat.name?.toLowerCase() || ''
+              const slug = cat.slug?.toLowerCase() || ''
+              
+              // Filter out IndianPornHQ sorting/filter pages
+              if (name.includes('longest videos') || name.includes('newest videos')) {
+                console.log(`[Categories] Filtering out special page: ${cat.name}`)
+                return false
+              }
+              
+              return true
+            })
+            
+            return filteredData.map((cat: any) => ({
               name: cat.name,
               url: cat.url,
               slug: cat.slug,
@@ -78,13 +113,18 @@ export default function CategoriesPage() {
           }
           return []
         } catch (err) {
-          console.error(`Error fetching categories from ${providerId}:`, err)
+          console.error(`[Categories] Error fetching categories from ${providerId}:`, err)
           return []
         }
       })
 
       const categoriesArrays = await Promise.all(allCategoriesPromises)
       let allCategories: ProviderCategory[] = categoriesArrays.flat()
+
+      console.log(`[Categories] Total categories fetched: ${allCategories.length}`)
+      console.log(`[Categories] By provider:`, 
+        providers.map(p => `${p}: ${allCategories.filter(c => c.provider === p).length}`).join(', ')
+      )
 
       // Load thumbnails from cache immediately and identify empty categories
       allCategories = allCategories.map(cat => {
@@ -100,6 +140,7 @@ export default function CategoriesPage() {
       // Sort alphabetically
       allCategories.sort((a, b) => a.name.localeCompare(b.name))
 
+      console.log(`[Categories] Setting ${allCategories.length} categories to state`)
       setCategories(allCategories)
       setLoading(false) // Set loading to false AFTER setting categories
       
@@ -286,7 +327,7 @@ export default function CategoriesPage() {
               All Categories
             </h1>
             <p className="text-sm sm:text-base text-gray-400 ml-11">
-              Browse all categories from FSIBlog, IndianPornHQ, and Superporn
+              Browse all categories from FSIBlog, IndianPornHQ, Superporn, KamaBaba, and WebXSeries
               {filteredCategories.length > 0 && ` • ${filteredCategories.length} ${filteredCategories.length === 1 ? 'category' : 'categories'}`}
               {totalPages > 1 && ` • Page ${currentPage} of ${totalPages}`}
             </p>
@@ -322,12 +363,14 @@ export default function CategoriesPage() {
               categories={[]} 
               hasPremiumAccess={hasPremiumAccess}
               loading={true}
+              isCollapsed={isCollapsed}
             />
           ) : filteredCategories.length > 0 ? (
             <>
               <CategoryGrid 
                 categories={paginatedCategories} 
                 hasPremiumAccess={hasPremiumAccess}
+                isCollapsed={isCollapsed}
               />
               
               {/* Pagination Controls */}

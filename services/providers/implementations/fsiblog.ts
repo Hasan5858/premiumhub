@@ -247,6 +247,115 @@ export class FSIBlogProvider extends BaseProvider {
   }
 
   /**
+   * Extract related videos from sidebar widgets
+   * Returns basic video info from sidebar links
+   */
+  private async extractRelatedVideosFromSidebar(html: string, currentPostId: string, limit: number = 9): Promise<UnifiedVideoData[]> {
+    const relatedVideos: UnifiedVideoData[] = [];
+    
+    try {
+      // Look for the "Related Porn Videos" section
+      const relatedSectionPattern = /<section[^>]*>[\s\S]*?<h3[^>]*>Related Porn Videos<\/h3>[\s\S]*?<\/section>/i;
+      const relatedSectionMatch = html.match(relatedSectionPattern);
+      
+      if (!relatedSectionMatch) {
+        this.log('No "Related Porn Videos" section found');
+        return relatedVideos;
+      }
+      
+      const relatedSection = relatedSectionMatch[0];
+      this.log('Found "Related Porn Videos" section');
+      
+      // Extract all article elements from related section
+      const articlePattern = /<article[^>]+class="[^"]*elementor-post[^"]*post-(\d+)[^"]*type-(porn-video|sex-gallery|sex-story)[^"]*"[^>]*>([\s\S]*?)<\/article>/gi;
+      const articles = this.extractAllMatches(relatedSection, articlePattern);
+      
+      this.log(`Found ${articles.length} related video articles`);
+      
+      for (const articleMatch of articles) {
+        const postId = articleMatch[1];
+        const type = articleMatch[2] as 'porn-video' | 'sex-gallery' | 'sex-story';
+        const articleHtml = articleMatch[3];
+        
+        // Skip if it's the current video
+        if (postId === currentPostId) continue;
+        
+        // Extract title and URL
+        const titleMatch = articleHtml.match(/<h3[^>]*class="elementor-post__title"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?([^<]+)</i);
+        if (!titleMatch) continue;
+        
+        const postUrl = titleMatch[1];
+        const title = titleMatch[2].trim();
+        
+        // Extract slug from URL
+        const slugMatch = postUrl.match(/\/([^\/]+)\/?$/);
+        const slug = slugMatch ? slugMatch[1] : postId;
+        
+        // Extract thumbnail with priority for data-src (lazy loading) and src
+        let thumbnail = '';
+        const dataSrcMatch = articleHtml.match(/data-src="([^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"/i);
+        if (dataSrcMatch) {
+          thumbnail = dataSrcMatch[1];
+        } else {
+          const srcMatch = articleHtml.match(/<img[^>]+src="([^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"/i);
+          if (srcMatch && !srcMatch[1].startsWith('data:')) {
+            thumbnail = srcMatch[1];
+          }
+        }
+        
+        // Clean and process thumbnail
+        if (thumbnail) {
+          thumbnail = thumbnail.replace(/['")\]]+$/, '');
+          thumbnail = this.removeImageSizeSuffix(thumbnail);
+          thumbnail = this.normalizeUrl(thumbnail);
+          thumbnail = this.proxyImage(thumbnail);
+        }
+        
+        // Extract categories from article class or URL
+        const categories: string[] = [];
+        const categoryClassMatch = articleHtml.match(/category-([a-z0-9-]+)/i);
+        const categoryUrlMatch = postUrl.match(/\/([^\/]+)\/[^\/]+\/?$/);
+        
+        if (categoryClassMatch) {
+          categories.push(categoryClassMatch[1]);
+        } else if (categoryUrlMatch) {
+          categories.push(categoryUrlMatch[1]);
+        }
+        
+        // Extract tags from article class
+        const tags: string[] = [];
+        const tagMatches = this.extractAllMatches(articleHtml, /video-tag-([a-z0-9-]+)/gi);
+        for (const tagMatch of tagMatches) {
+          tags.push(tagMatch[1]);
+        }
+        
+        relatedVideos.push({
+          id: postId,
+          slug,
+          title,
+          thumbnail,
+          postUrl,
+          provider: this.config.metadata.id,
+          type,
+          categories,
+          tags,
+          views: '0',
+          duration: '0',
+        });
+        
+        if (relatedVideos.length >= limit) break;
+      }
+      
+      this.log(`Extracted ${relatedVideos.length} related videos`);
+      
+    } catch (error) {
+      this.logError('Failed to extract related videos', error);
+    }
+    
+    return relatedVideos;
+  }
+
+  /**
    * Get detailed video information
    */
   async getVideoDetails(slug: string, categorySlug?: string): Promise<ProviderResponse<UnifiedVideoData>> {
@@ -397,6 +506,10 @@ export class FSIBlogProvider extends BaseProvider {
         this.log(`Found ${galleryImages.length} gallery images`);
       }
       
+      // Extract related videos from sidebar
+      const relatedVideos = await this.extractRelatedVideosFromSidebar(html, postId, 9);
+      this.log(`Related videos: ${relatedVideos.length}`);
+      
       const videoData: UnifiedVideoData = {
         id: postId,
         slug,
@@ -411,6 +524,7 @@ export class FSIBlogProvider extends BaseProvider {
         tags,
         uploadDate,
         galleryImages: galleryImages.length > 0 ? galleryImages : undefined,
+        relatedVideos: relatedVideos.length > 0 ? relatedVideos : undefined,
         views: "0",
         duration: "0",
       };

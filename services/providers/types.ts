@@ -36,6 +36,9 @@ export interface UnifiedVideoData {
   // Gallery-specific (for type: 'sex-gallery')
   galleryImages?: string[];
   
+  // Related content
+  relatedVideos?: UnifiedVideoData[];
+  
   // Metadata
   description?: string;
   excerpt?: string;

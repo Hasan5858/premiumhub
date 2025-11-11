@@ -33,6 +33,9 @@ export default function ProviderPage() {
     { type: 'popular', name: 'Popular Videos' }
   ])
   
+  // Determine if provider uses numeric pagination
+  const usesNumericPagination = ['fsiblog5', 'kamababa', 'superporn', 'webxseries'].includes(providerName)
+  
   // Category state - categories don't have pagination, only page 1 videos
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   
@@ -90,6 +93,16 @@ export default function ProviderPage() {
           throw new Error(`Failed to fetch Superporn category videos: ${response.status}`)
         }
         data = await response.json()
+      } else if (providerName === 'kamababa') {
+        // Fetch KamaBaba category videos with pagination
+        const categorySlug = categoryUrl.split('/').filter((p: string) => p && p.length > 0).pop() || ''
+        const response = await fetch(`/api/providers/kamababa/category-videos?slug=${categorySlug}&page=${pageNum}`)
+        data = await response.json()
+      } else if (providerName === 'webxseries') {
+        // Fetch WebXSeries category videos with pagination using unified API
+        const categorySlug = categoryUrl.split('/').filter((p: string) => p && p.length > 0).pop() || ''
+        const response = await fetch(`/api/v2/providers/webxseries/category/${categorySlug}?page=${pageNum}`)
+        data = await response.json()
       } else {
         // Fetch IndianPornHQ category videos (no pagination support)
         data = await fetchIndianPornHQCategoryVideos(categoryUrl)
@@ -99,7 +112,7 @@ export default function ProviderPage() {
         const videoList = data.videos || data.data || []
         setVideos(videoList)
         
-        // FSIBlog and Superporn categories have pagination, IndianPornHQ don't
+        // FSIBlog, Superporn, KamaBaba, and WebXSeries categories have pagination, IndianPornHQ don't
         if (providerName === 'fsiblog5') {
           setTotalPages(10) // FSIBlog supports up to 10 pages per category
           setHasNextPage(pageNum < 10 && videoList.length > 0)
@@ -107,6 +120,14 @@ export default function ProviderPage() {
         } else if (providerName === 'superporn') {
           setTotalPages(20) // Superporn supports up to 20 pages per category
           setHasNextPage(data.pagination?.hasNextPage || (pageNum < 20 && videoList.length > 0))
+          setCurrentPage(pageNum)
+        } else if (providerName === 'kamababa') {
+          setTotalPages(20) // KamaBaba supports up to 20 pages per category
+          setHasNextPage(pageNum < 20 && videoList.length > 0)
+          setCurrentPage(pageNum)
+        } else if (providerName === 'webxseries') {
+          setTotalPages(20) // WebXSeries supports up to 20 pages per category
+          setHasNextPage(pageNum < 20 && videoList.length > 0)
           setCurrentPage(pageNum)
         } else {
           // IndianPornHQ categories don't have pagination
@@ -193,6 +214,8 @@ export default function ProviderPage() {
         // New format - slug, convert to full URL based on provider
         if (providerName === 'fsiblog5') {
           categoryUrl = `https://www.fsiblog5.com/category/${categorySlug}/`
+        } else if (providerName === 'kamababa') {
+          categoryUrl = `https://www.kamababa.desi/category/${categorySlug}/`
         } else {
           categoryUrl = `https://www.indianpornhq.com/${categorySlug}/`
         }
@@ -242,7 +265,7 @@ export default function ProviderPage() {
       let initialPage = 1
       
       // Determine max pages based on provider
-      const maxPages = providerName === 'fsiblog5' ? 10 : 5
+      const maxPages = providerName === 'fsiblog5' ? 10 : providerName === 'kamababa' ? 20 : providerName === 'webxseries' ? 20 : 5
       
       // First priority: URL parameter
       if (router.query.page && !Array.isArray(router.query.page)) {
@@ -296,6 +319,15 @@ export default function ProviderPage() {
         // Fetch FSIBlog videos using unified API with pagination
         const response = await fetch(`/api/v2/providers/fsiblog5/videos?page=${page}`)
         data = await response.json()
+      } else if (providerName === 'kamababa') {
+        // Fetch KamaBaba videos with page number
+        const pageUrl = page > 1 ? `https://www.kamababa.desi/page/${page}/` : undefined
+        const response = await fetch(`/api/providers/kamababa/videos${pageUrl ? `?page=${encodeURIComponent(pageUrl)}` : ''}`)
+        data = await response.json()
+      } else if (providerName === 'webxseries') {
+        // Fetch WebXSeries videos using unified API with pagination
+        const response = await fetch(`/api/v2/providers/webxseries/videos?page=${page}`)
+        data = await response.json()
       } else {
         // Fetch IndianPornHQ videos
         data = await fetchIndianPornHQVideos(pageType)
@@ -304,9 +336,15 @@ export default function ProviderPage() {
       const videoList = data.videos || data.data || []
       setVideos(videoList)
       
-      // For FSIBlog, support real pagination (assume up to 10 pages exist)
+      // For FSIBlog, KamaBaba, and WebXSeries, support real pagination
       if (providerName === 'fsiblog5') {
         setTotalPages(10) // FSIBlog supports pagination
+        setHasNextPage(videoList.length > 0) // If we got videos, there might be more
+      } else if (providerName === 'kamababa') {
+        setTotalPages(20) // KamaBaba supports up to 20 pages
+        setHasNextPage(videoList.length > 0) // If we got videos, there might be more
+      } else if (providerName === 'webxseries') {
+        setTotalPages(20) // WebXSeries supports up to 20 pages
         setHasNextPage(videoList.length > 0) // If we got videos, there might be more
       } else {
         setTotalPages(pageTypes.length)
@@ -337,7 +375,7 @@ export default function ProviderPage() {
     }
     
     // Determine max pages based on provider
-    const maxPages = providerName === 'fsiblog5' ? totalPages : 5
+    const maxPages = providerName === 'fsiblog5' ? totalPages : providerName === 'kamababa' ? 20 : providerName === 'webxseries' ? 20 : 5
     
     // Only load if:
     // 1. currentPage is valid
@@ -420,10 +458,10 @@ export default function ProviderPage() {
     // Reset scroll restoration flag when manually changing pages
     scrollRestoredRef.current = false
     
-    // Handle category pagination for FSIBlog and Superporn
+    // Handle category pagination for FSIBlog, Superporn, KamaBaba, and WebXSeries
     if (selectedCategory) {
-      if (providerName === 'fsiblog5' || providerName === 'superporn') {
-        // FSIBlog and Superporn categories support pagination
+      if (providerName === 'fsiblog5' || providerName === 'superporn' || providerName === 'kamababa' || providerName === 'webxseries') {
+        // FSIBlog, Superporn, KamaBaba, and WebXSeries categories support pagination
         loadCategoryVideos(selectedCategory, page)
         // Scroll to top when changing pages
         window.scrollTo({ top: 0, behavior: "smooth" })
@@ -456,6 +494,8 @@ export default function ProviderPage() {
       'indianpornhq': 'IndianPornHQ',
       'fsiblog5': 'FSIBlog',
       'superporn': 'Superporn',
+      'kamababa': 'KamaBaba',
+      'webxseries': 'WebXSeries',
       'desi': 'Desi Provider'
     }
     return names[providerName] || providerName
@@ -677,6 +717,16 @@ export default function ProviderPage() {
                       videoQuery.cat = categorySlug
                     }
                   }
+                } else if (providerName === 'kamababa') {
+                  // KamaBaba uses slug directly
+                  videoUrl = `/provider/${provider}/video/${video.slug || encodeURIComponent(video.id || `video-${index}`)}`
+                  if (selectedCategory) {
+                    const urlParts = selectedCategory.split('/').filter((p: string) => p && p.length > 0)
+                    const categorySlug = urlParts[urlParts.length - 1] || ''
+                    if (categorySlug) {
+                      videoQuery.cat = categorySlug
+                    }
+                  }
                 } else if (providerName === 'superporn') {
                   // Superporn uses /video/{id} format (same as /category/[slug] page)
                   videoUrl = `/video/${video.id || encodeURIComponent(video.slug || `video-${index}`)}`
@@ -689,6 +739,16 @@ export default function ProviderPage() {
                     categorySlug: categorySlug,
                     categoryPage: currentPage,
                     videoData: JSON.stringify(video)
+                  }
+                } else if (providerName === 'webxseries') {
+                  // WebXSeries uses slug directly
+                  videoUrl = `/provider/${provider}/video/${video.slug || encodeURIComponent(video.id || `video-${index}`)}`
+                  if (selectedCategory) {
+                    const urlParts = selectedCategory.split('/').filter((p: string) => p && p.length > 0)
+                    const categorySlug = urlParts[urlParts.length - 1] || ''
+                    if (categorySlug) {
+                      videoQuery.cat = categorySlug
+                    }
                   }
                 } else {
                   // IndianPornHQ uses seo_slug
@@ -705,6 +765,8 @@ export default function ProviderPage() {
                 // Construct thumbnail URL based on provider
                 const isFSIBlog = providerName === 'fsiblog5' || provider === 'fsiblog5'
                 const isSuperporn = providerName === 'superporn'
+                const isKamaBaba = providerName === 'kamababa'
+                const isWebXSeries = providerName === 'webxseries'
                 
                 let thumbnailSrc: string
                 if (isFSIBlog) {
@@ -714,6 +776,12 @@ export default function ProviderPage() {
                 } else if (isSuperporn) {
                   // Superporn thumbnails are direct URLs from API (thumbnailUrl or thumbnail field)
                   thumbnailSrc = video.thumbnailUrl || video.thumbnail || video.thumbnail_url || "/api/placeholder?height=400&width=600&query=video"
+                } else if (isKamaBaba) {
+                  // KamaBaba thumbnails are direct URLs from the site
+                  thumbnailSrc = video.thumbnail || video.thumbnail_url || "/api/placeholder?height=400&width=600&query=video"
+                } else if (isWebXSeries) {
+                  // WebXSeries thumbnails are direct URLs from the site
+                  thumbnailSrc = video.thumbnail || video.thumbnail_url || "/api/placeholder?height=400&width=600&query=video"
                 } else {
                   // Default fallback for other providers
                   thumbnailSrc = video.thumbnail_url || video.thumbnail || "/api/placeholder?height=400&width=600&query=video"
@@ -735,14 +803,14 @@ export default function ProviderPage() {
                       alt={video.title}
                       className="w-full h-full object-cover brightness-95"
                       style={{ 
-                        transform: (isFSIBlog || isSuperporn) ? 'scale(1)' : 'scaleY(-1) scale(1)',
+                        transform: (isFSIBlog || isSuperporn || isKamaBaba || isWebXSeries) ? 'scale(1)' : 'scaleY(-1) scale(1)',
                         transition: 'transform 0.5s ease-in-out'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = (isFSIBlog || isSuperporn) ? 'scale(1.05)' : 'scaleY(-1) scale(1.05)'
+                        e.currentTarget.style.transform = (isFSIBlog || isSuperporn || isKamaBaba || isWebXSeries) ? 'scale(1.05)' : 'scaleY(-1) scale(1.05)'
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = (isFSIBlog || isSuperporn) ? 'scale(1)' : 'scaleY(-1) scale(1)'
+                        e.currentTarget.style.transform = (isFSIBlog || isSuperporn || isKamaBaba || isWebXSeries) ? 'scale(1)' : 'scaleY(-1) scale(1)'
                       }}
                       onError={(e) => {
                         const target = e.target as HTMLImageElement
@@ -799,8 +867,8 @@ export default function ProviderPage() {
           ) : !showCategories && totalPages > 1 ? (
             // Pagination
             <div className="mt-8">
-              {(providerName === 'fsiblog5' || providerName === 'superporn') ? (
-                // FSIBlog & Superporn: Numeric pagination
+              {usesNumericPagination ? (
+                // FSIBlog, Superporn, KamaBaba & WebXSeries: Numeric pagination
                 <div className="flex justify-center items-center space-x-2 flex-wrap gap-2">
                   <button
                     onClick={() => handlePageChange(currentPage - 1)}
@@ -811,7 +879,7 @@ export default function ProviderPage() {
                   </button>
 
                   {/* Show page numbers */}
-                  {Array.from({ length: Math.min(totalPages, providerName === 'superporn' ? 20 : 10) }, (_, i) => i + 1).map((pageNum) => {
+                  {Array.from({ length: Math.min(totalPages, providerName === 'superporn' || providerName === 'kamababa' || providerName === 'webxseries' ? 20 : 10) }, (_, i) => i + 1).map((pageNum) => {
                     // Show first 2, last 2, and pages around current page
                     const showPage = 
                       pageNum <= 2 || 

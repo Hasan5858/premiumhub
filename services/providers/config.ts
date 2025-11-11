@@ -55,7 +55,7 @@ export const fsiblogConfig: ProviderConfig = {
     },
     stats: {
       videos: '15,000+',
-      categories: 12,
+      categories: 9,
     },
     features: ['Video Content', 'Photo Galleries', 'Stories', 'Daily Updates'],
     baseUrl: 'https://www.fsiblog5.com',
@@ -78,11 +78,11 @@ export const fsiblogConfig: ProviderConfig = {
     { slug: 'couple', name: 'Couple', url: 'https://www.fsiblog5.com/category/couple/', provider: 'fsiblog5' },
     { slug: 'cuckold', name: 'Cuckold', url: 'https://www.fsiblog5.com/category/cuckold/', provider: 'fsiblog5' },
     { slug: 'nude-indian-girl', name: 'Nude Indian Girl', url: 'https://www.fsiblog5.com/category/nude-indian-girl/', provider: 'fsiblog5' },
-    { slug: 'indian-wife', name: 'Indian Wife', url: 'https://www.fsiblog5.com/category/indian-wife/', provider: 'fsiblog5' },
-    { slug: 'college-girl', name: 'College Girl', url: 'https://www.fsiblog5.com/category/college-girl/', provider: 'fsiblog5' },
+    // Removed: indian-wife (404 - doesn't exist)
+    // Removed: college-girl (404 - doesn't exist)
     { slug: 'aunty', name: 'Aunty', url: 'https://www.fsiblog5.com/category/aunty/', provider: 'fsiblog5' },
     { slug: 'bhabhi', name: 'Bhabhi', url: 'https://www.fsiblog5.com/category/bhabhi/', provider: 'fsiblog5' },
-    { slug: 'desi-mms', name: 'Desi MMS', url: 'https://www.fsiblog5.com/category/desi-mms/', provider: 'fsiblog5' },
+    // Removed: desi-mms (404 - doesn't exist)
     { slug: 'fingering', name: 'Fingering', url: 'https://www.fsiblog5.com/category/fingering/', provider: 'fsiblog5' },
     { slug: 'lesbian', name: 'Lesbian', url: 'https://www.fsiblog5.com/category/lesbian/', provider: 'fsiblog5' },
     { slug: 'threesome', name: 'Threesome', url: 'https://www.fsiblog5.com/category/threesome/', provider: 'fsiblog5' },
@@ -99,6 +99,57 @@ export const fsiblogConfig: ProviderConfig = {
     hasGalleries: true,
     hasStories: true,
     hasDynamicCategories: false,
+  },
+};
+
+/**
+ * KamaBaba Provider Configuration
+ */
+export const kamababaConfig: ProviderConfig = {
+  metadata: {
+    id: 'kamababa',
+    name: 'kamababa',
+    displayName: 'KamaBaba',
+    description: 'Premium desi content with high-quality videos and regular updates.',
+    icon: '🎬',
+    color: {
+      primary: 'rose-500',
+      secondary: 'pink-600',
+      gradient: 'from-rose-500 to-pink-600',
+    },
+    stats: {
+      videos: '10,000+',
+      categories: 20,
+    },
+    features: ['HD Videos', 'Daily Updates', 'Multiple Categories', 'Fast Streaming'],
+    baseUrl: 'https://www.kamababa.desi',
+    workerUrl: 'https://fsiblog5.premiumhub.workers.dev',
+  },
+  
+  api: {
+    baseUrl: 'https://www.kamababa.desi',
+    workerUrl: 'https://fsiblog5.premiumhub.workers.dev',
+    endpoints: {
+      videos: '/page/{page}/',
+      categoryVideos: '/category/{category}/page/{page}/',
+      videoDetails: '/{slug}/',
+      search: '/?s={query}',
+    },
+  },
+  
+  staticCategories: [],
+  
+  pagination: {
+    enabled: true,
+    maxPages: 20,
+    itemsPerPage: 33,
+  },
+  
+  features: {
+    hasSearch: true,
+    hasGalleries: false,
+    hasStories: false,
+    hasDynamicCategories: true,
   },
 };
 
@@ -203,12 +254,64 @@ export const superpornConfig: ProviderConfig = {
 };
 
 /**
+ * WebXSeries Provider Configuration
+ */
+export const webxseriesConfig: ProviderConfig = {
+  metadata: {
+    id: 'webxseries',
+    name: 'webxseries',
+    displayName: 'WebXSeries',
+    description: 'Premium collection of Indian web series and adult content. Free streaming since 2019.',
+    icon: '📺',
+    color: {
+      primary: 'cyan-500',
+      secondary: 'blue-600',
+      gradient: 'from-cyan-500 to-blue-600',
+    },
+    stats: {
+      videos: '5,000+',
+      categories: 50,
+    },
+    features: ['Web Series', 'Episodes', 'Multiple OTT Platforms', 'HD Quality'],
+    baseUrl: 'https://webxseries.to',
+    workerUrl: undefined,
+  },
+  
+  api: {
+    baseUrl: 'https://webxseries.to',
+    endpoints: {
+      videos: '/page/{page}/',
+      categoryVideos: '/ott/{category}/page/{page}/',
+      videoDetails: '/{slug}/',
+      search: '/?s={query}',
+    },
+  },
+  
+  staticCategories: [],
+  
+  pagination: {
+    enabled: true,
+    maxPages: 20,
+    itemsPerPage: 12,
+  },
+  
+  features: {
+    hasSearch: true,
+    hasGalleries: false,
+    hasStories: false,
+    hasDynamicCategories: true,
+  },
+};
+
+/**
  * All provider configurations
  */
 export const providerConfigs: Record<string, ProviderConfig> = {
   fsiblog5: fsiblogConfig,
   indianpornhq: indianPornHQConfig,
   superporn: superpornConfig,
+  kamababa: kamababaConfig,
+  webxseries: webxseriesConfig,
 };
 
 /**

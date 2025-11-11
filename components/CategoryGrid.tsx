@@ -16,13 +16,15 @@ interface CategoryGridProps {
   hasPremiumAccess: boolean | null
   loading?: boolean
   showProviderBadge?: boolean
+  isCollapsed?: boolean
 }
 
 export default function CategoryGrid({ 
   categories, 
   hasPremiumAccess, 
   loading = false,
-  showProviderBadge = true 
+  showProviderBadge = true,
+  isCollapsed = true
 }: CategoryGridProps) {
   if (loading) {
     return (
@@ -46,7 +48,9 @@ export default function CategoryGrid({
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+    <div className={`grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 ${
+      isCollapsed ? 'lg:grid-cols-5' : 'lg:grid-cols-4'
+    }`}>
       {categories.map((category, index) => {
         const provider = category.provider || 'indianpornhq'
         const urlParts = category.url ? category.url.split('/').filter((p: string) => p && p.length > 0) : []
@@ -56,6 +60,10 @@ export default function CategoryGrid({
           ? { name: 'FSIBlog', color: 'from-emerald-500/80 to-green-600/80' }
           : provider === 'superporn'
           ? { name: 'Superporn', color: 'from-purple-500/80 to-pink-600/80' }
+          : provider === 'kamababa'
+          ? { name: 'KamaBaba', color: 'from-rose-500/80 to-pink-600/80' }
+          : provider === 'webxseries'
+          ? { name: 'WebXSeries', color: 'from-cyan-500/80 to-blue-600/80' }
           : { name: 'IndianPornHQ', color: 'from-blue-500/80 to-indigo-600/80' }
         
         // Handle both old Category format (with slug only) and new ProviderCategory format

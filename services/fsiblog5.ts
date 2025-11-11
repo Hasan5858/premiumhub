@@ -15,6 +15,114 @@ export interface FSIBlog5Video {
   excerpt?: string;
   uploadDate?: string;
   galleryImages?: string[]; // For sex-gallery posts
+  relatedVideos?: FSIBlog5Video[]; // Related videos from sidebar or same category
+}
+
+/**
+ * Extract related videos from sidebar widgets
+ * Returns basic video info without recursively fetching full details
+ */
+async function extractRelatedVideosFromSidebar(html: string, currentPostId: string, limit: number = 9): Promise<FSIBlog5Video[]> {
+  const relatedVideos: FSIBlog5Video[] = [];
+  
+  try {
+    // Look for the "Related Porn Videos" section
+    const relatedSectionPattern = /<section[^>]*>[\s\S]*?<h3[^>]*>Related Porn Videos<\/h3>[\s\S]*?<\/section>/i;
+    const relatedSectionMatch = html.match(relatedSectionPattern);
+    
+    if (!relatedSectionMatch) {
+      console.log('[fsiblog5] No "Related Porn Videos" section found');
+      return relatedVideos;
+    }
+    
+    const relatedSection = relatedSectionMatch[0];
+    console.log('[fsiblog5] Found "Related Porn Videos" section');
+    
+    // Extract all article elements from related section
+    const articlePattern = /<article[^>]+class="[^"]*elementor-post[^"]*post-(\d+)[^"]*type-(porn-video|sex-gallery|sex-story)[^"]*"[^>]*>([\s\S]*?)<\/article>/gi;
+    const articles = extractAllMatches(relatedSection, articlePattern);
+    
+    console.log(`[fsiblog5] Found ${articles.length} related video articles`);
+    
+    for (const articleMatch of articles) {
+      const postId = articleMatch[1];
+      const type = articleMatch[2] as 'porn-video' | 'sex-gallery' | 'sex-story';
+      const articleHtml = articleMatch[3];
+      
+      // Skip if it's the current video
+      if (postId === currentPostId) continue;
+      
+      // Extract title and URL
+      const titleMatch = articleHtml.match(/<h3[^>]*class="elementor-post__title"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>[\s\S]*?([^<]+)</i);
+      if (!titleMatch) continue;
+      
+      const postUrl = titleMatch[1];
+      const title = titleMatch[2].trim();
+      
+      // Extract slug from URL
+      const slugMatch = postUrl.match(/\/([^\/]+)\/?$/);
+      const slug = slugMatch ? slugMatch[1] : postId;
+      
+      // Extract thumbnail with priority for data-src (lazy loading) and src
+      let thumbnail = '';
+      const dataSrcMatch = articleHtml.match(/data-src="([^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"/i);
+      if (dataSrcMatch) {
+        thumbnail = dataSrcMatch[1];
+      } else {
+        const srcMatch = articleHtml.match(/<img[^>]+src="([^"]+\.(?:jpg|jpeg|png|webp|gif)[^"]*)"/i);
+        if (srcMatch && !srcMatch[1].startsWith('data:')) {
+          thumbnail = srcMatch[1];
+        }
+      }
+      
+      // Clean and process thumbnail
+      if (thumbnail) {
+        thumbnail = thumbnail.replace(/['")\]]+$/, '');
+        // Remove WordPress image size suffix
+        thumbnail = thumbnail.replace(/-\d+x\d+(\.[a-z]+)$/i, '$1');
+        // Ensure absolute URL
+        if (!thumbnail.startsWith('http')) {
+          thumbnail = `${BASE_URL}${thumbnail.startsWith('/') ? '' : '/'}${thumbnail}`;
+        }
+        // Proxy the thumbnail
+        thumbnail = `${WORKER_URL}/?url=${encodeURIComponent(thumbnail)}`;
+      }
+      
+      // Extract categories from article class or URL
+      const categories: string[] = [];
+      const categoryMatch = postUrl.match(/\/([^\/]+)\/[^\/]+\/?$/);
+      if (categoryMatch) {
+        categories.push(categoryMatch[1]);
+      }
+      
+      // Extract tags from article class
+      const tags: string[] = [];
+      const tagMatches = extractAllMatches(articleMatch[0], /video-tag-([a-z0-9-]+)/gi);
+      for (const tagMatch of tagMatches) {
+        tags.push(tagMatch[1]);
+      }
+      
+      relatedVideos.push({
+        id: postId,
+        slug,
+        title,
+        thumbnail,
+        postUrl,
+        categories,
+        tags,
+        type,
+      });
+      
+      if (relatedVideos.length >= limit) break;
+    }
+    
+    console.log(`[fsiblog5] Extracted ${relatedVideos.length} related videos`);
+    
+  } catch (error) {
+    console.error('[fsiblog5] Error extracting related videos:', error);
+  }
+  
+  return relatedVideos;
 }
 
 /**
@@ -313,6 +421,10 @@ export async function getVideoDetails(postUrl: string): Promise<FSIBlog5Video | 
     console.log(`[fsiblog5] Found ${galleryImages.length} gallery images`);
   }
   
+  // Extract related videos from sidebar
+  const relatedVideos = await extractRelatedVideosFromSidebar(html, postId, 9);
+  console.log(`[fsiblog5] Related videos: ${relatedVideos.length}`);
+  
   console.log(`[fsiblog5] Extracted video: ${title}`);
   console.log(`[fsiblog5] Video URL: ${videoUrl}`);
   
@@ -329,6 +441,7 @@ export async function getVideoDetails(postUrl: string): Promise<FSIBlog5Video | 
     excerpt,
     uploadDate,
     ...(type === 'sex-gallery' && galleryImages.length > 0 && { galleryImages }),
+    ...(relatedVideos.length > 0 && { relatedVideos }),
   };
 }
 
