@@ -102,6 +102,12 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
 
   useEffect(() => {
     async function loadVideoData() {
+      // Skip loading if we already have initial data from SSR
+      if (initialVideoData) {
+        console.log('[Client] Using SSR data, skipping fetch')
+        return
+      }
+
       if (!id || !provider) return
 
       try {
@@ -158,21 +164,20 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
             ? window.location.origin 
             : process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
           
-          // Check if we came from a category and pass the category URL
+          // Check if we came from a category and pass the category parameter
           const categorySlug = router.query.cat
           let apiUrl = `${baseUrl}/api/providers/${provider}/video-by-slug/${id}`
           
-          // If viewing from a category, we need to pass the category URL to the API
-          // We'll need to reconstruct it from the category slug
+          // Pass category context for proper video index lookup
           if (categorySlug && typeof categorySlug === 'string') {
-            // Set category URL based on provider
-            let categoryUrl = ''
             if (provider === 'fsiblog5') {
-              categoryUrl = `https://www.fsiblog5.com/category/${categorySlug}/`
-            } else {
-              categoryUrl = `https://www.indianpornhq.com/${categorySlug}/`
+              // FSIBlog5 uses category slug for proper URL construction
+              apiUrl += `?cat=${encodeURIComponent(categorySlug)}`
+            } else if (provider === 'indianpornhq') {
+              // IndianPornHQ needs category URL to fetch correct video by index from that category
+              const categoryUrl = `https://www.indianpornhq.com/${categorySlug}/`
+              apiUrl += `?cat_url=${encodeURIComponent(categoryUrl)}`
             }
-            apiUrl += `?cat_url=${encodeURIComponent(categoryUrl)}`
           }
           
           const response = await fetch(apiUrl)
@@ -231,7 +236,7 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
     }
 
     loadVideoData()
-  }, [id, provider])
+  }, [id, provider, initialVideoData])
 
   // Cleanup ArtPlayer on unmount
   useEffect(() => {
@@ -1102,13 +1107,13 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
         // Use video-by-slug endpoint
         apiPath = `/api/providers/${provider}/video-by-slug/${encodeURIComponent(id)}`
         
-        // For category videos, pass the category parameter/URL
+        // Pass category context for proper video index lookup
         if (cat) {
           if (provider === 'fsiblog5') {
-            // FSIBlog5 uses category slug
+            // FSIBlog5 uses category slug for proper URL construction
             apiPath += `?cat=${encodeURIComponent(cat)}`
           } else if (provider === 'indianpornhq') {
-            // IndianPornHQ needs full category URL for proper video extraction
+            // IndianPornHQ needs category URL to fetch correct video by index from that category
             const categoryUrl = `https://www.indianpornhq.com/${cat}/`
             apiPath += `?cat_url=${encodeURIComponent(categoryUrl)}`
           }
@@ -1164,7 +1169,14 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     }
 
     console.log(`[getServerSideProps] Returning props with video data`)
-    // Return video data as props
+    // Return video data as props with cache control headers
+    context.res.setHeader(
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate, proxy-revalidate'
+    )
+    context.res.setHeader('Pragma', 'no-cache')
+    context.res.setHeader('Expires', '0')
+    
     return {
       props: {
         initialVideoData: videoData
