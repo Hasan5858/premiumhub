@@ -1102,12 +1102,23 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
       
       let apiPath: string
       
-      if (isSlug) {
-        // ID is a slug format like "video-title-provider-0"
-        // Use video-by-slug endpoint
+      // Providers that use the unified API
+      const unifiedProviders = ['fsiblog5', 'indianpornhq', 'superporn', 'kamababa', 'webxseries']
+      const useUnifiedApi = unifiedProviders.includes(provider)
+      
+      if (isSlug && useUnifiedApi) {
+        // Use unified API endpoint for modern providers
+        apiPath = `/api/v2/providers/${provider}/video/${encodeURIComponent(id)}`
+        
+        // Pass category slug for unified API
+        if (cat) {
+          apiPath += `?categorySlug=${encodeURIComponent(cat)}`
+        }
+      } else if (isSlug) {
+        // Use legacy slug-based API endpoint for older providers
         apiPath = `/api/providers/${provider}/video-by-slug/${encodeURIComponent(id)}`
         
-        // Pass category context for proper video index lookup
+        // Pass category context for proper video index lookup (legacy API)
         if (cat) {
           if (provider === 'fsiblog5') {
             // FSIBlog5 uses category slug for proper URL construction
