@@ -9,6 +9,7 @@ import MembershipCheck from "@/components/MembershipCheck"
 import { useAuth } from "@/contexts/AuthContext"
 import dynamic from 'next/dynamic'
 import type Artplayer from 'artplayer'
+import { GetServerSideProps } from "next"
 
 // Dynamically import ArtPlayer to avoid SSR issues
 const ArtPlayer = dynamic(() => import('@/components/ArtPlayer'), {
@@ -20,14 +21,18 @@ const ArtPlayer = dynamic(() => import('@/components/ArtPlayer'), {
   ),
 })
 
-export default function ProviderVideoPage() {
+interface ProviderVideoPageProps {
+  initialVideoData?: any
+}
+
+export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPageProps) {
   const router = useRouter()
   const { provider, id } = router.query
   const { navigationState } = useNavigation()
   const { user } = useAuth()
 
-  const [videoData, setVideoData] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [videoData, setVideoData] = useState<any>(initialVideoData || null)
+  const [loading, setLoading] = useState(!initialVideoData)
   const [error, setError] = useState<string | null>(null)
   const [showTags, setShowTags] = useState(false)
   const [iframeLoading, setIframeLoading] = useState(true)
@@ -1064,4 +1069,89 @@ export default function ProviderVideoPage() {
       )}
     </>
   )
+}
+
+/**
+ * Server-side rendering to fetch video data before page renders
+ * This ensures the video data is available immediately
+ */
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const { provider, id } = context.params as { provider: string; id: string }
+  const { cat } = context.query as { cat?: string }
+  
+  try {
+    // Validate required parameters
+    if (!provider || !id) {
+      return { notFound: true }
+    }
+
+    let videoData = null
+
+    try {
+      // Try different API endpoints based on provider
+      let apiPath: string
+      
+      if (provider === 'indianpornhq') {
+        // IndianPornHQ uses /api/providers/indianpornhq/video/[id]
+        apiPath = `/api/providers/${provider}/video/${encodeURIComponent(id)}`
+      } else if (provider === 'fsiblog5') {
+        // FSIBlog5 uses /api/providers/fsiblog5/video-by-slug/[slug]
+        apiPath = `/api/providers/${provider}/video-by-slug/${encodeURIComponent(id)}`
+        
+        // For FSIBlog category videos, reconstruct the category URL
+        if (cat) {
+          const categoryUrl = `https://www.fsiblog5.com/category/${cat}/`
+          apiPath += `?cat_url=${encodeURIComponent(categoryUrl)}`
+        }
+      } else {
+        // Generic fallback endpoint
+        apiPath = `/api/providers/${provider}/video/${encodeURIComponent(id)}`
+      }
+      
+      console.log(`[getServerSideProps] Fetching from: ${apiPath}`)
+      
+      // Construct full URL for server-side fetch
+      const protocol = context.req.headers['x-forwarded-proto'] || 'http'
+      const host = context.req.headers.host
+      const url = `${protocol}://${host}${apiPath}`
+      
+      console.log(`[getServerSideProps] Full URL: ${url}`)
+      
+      const response = await fetch(url, { 
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data) {
+          videoData = data
+          console.log(`[getServerSideProps] Successfully fetched video data for ${provider}/${id}`)
+        } else {
+          console.error(`[getServerSideProps] API response not successful:`, data.error)
+        }
+      } else {
+        console.error(`[getServerSideProps] API returned status ${response.status}`)
+      }
+    } catch (error) {
+      console.error(`[getServerSideProps] Failed to fetch video from API: ${error}`)
+    }
+
+    // If no video data found or unsuccessful response
+    if (!videoData || !videoData.success || !videoData.data) {
+      console.error(`[getServerSideProps] No valid video data found for ${provider}/${id}, returning 404`)
+      return { notFound: true }
+    }
+
+    console.log(`[getServerSideProps] Returning props with video data`)
+    // Return video data as props
+    return {
+      props: {
+        initialVideoData: videoData
+      }
+    }
+  } catch (error) {
+    console.error(`[getServerSideProps] Unexpected error: ${error}`)
+    return { notFound: true }
+  }
 }
