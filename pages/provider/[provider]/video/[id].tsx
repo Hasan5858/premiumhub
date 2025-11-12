@@ -1088,34 +1088,45 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     let videoData = null
 
     try {
-      // Try different API endpoints based on provider
+      // Determine if ID is a slug or raw video ID
+      const isSlug = typeof id === 'string' && 
+        id.includes('-') && 
+        !id.startsWith('?') && 
+        !id.startsWith('http') &&
+        !id.includes('%')
+      
       let apiPath: string
       
-      if (provider === 'indianpornhq') {
-        // IndianPornHQ uses /api/providers/indianpornhq/video/[id]
-        apiPath = `/api/providers/${provider}/video/${encodeURIComponent(id)}`
-      } else if (provider === 'fsiblog5') {
-        // FSIBlog5 uses /api/providers/fsiblog5/video-by-slug/[slug]
+      if (isSlug) {
+        // ID is a slug format like "video-title-provider-0"
+        // Use video-by-slug endpoint
         apiPath = `/api/providers/${provider}/video-by-slug/${encodeURIComponent(id)}`
         
-        // For FSIBlog category videos, reconstruct the category URL
+        // For category videos, pass the category parameter/URL
         if (cat) {
-          const categoryUrl = `https://www.fsiblog5.com/category/${cat}/`
-          apiPath += `?cat_url=${encodeURIComponent(categoryUrl)}`
+          if (provider === 'fsiblog5') {
+            // FSIBlog5 uses category slug
+            apiPath += `?cat=${encodeURIComponent(cat)}`
+          } else if (provider === 'indianpornhq') {
+            // IndianPornHQ needs full category URL for proper video extraction
+            const categoryUrl = `https://www.indianpornhq.com/${cat}/`
+            apiPath += `?cat_url=${encodeURIComponent(categoryUrl)}`
+          }
         }
       } else {
-        // Generic fallback endpoint
+        // ID is a raw video ID (query string or direct ID)
+        // Use video/[id] endpoint
         apiPath = `/api/providers/${provider}/video/${encodeURIComponent(id)}`
       }
       
-      console.log(`[getServerSideProps] Fetching from: ${apiPath}`)
+      console.log(`[getServerSideProps] ID type: ${isSlug ? 'slug' : 'raw'}, API path: ${apiPath}`)
       
       // Construct full URL for server-side fetch
       const protocol = context.req.headers['x-forwarded-proto'] || 'http'
       const host = context.req.headers.host
       const url = `${protocol}://${host}${apiPath}`
       
-      console.log(`[getServerSideProps] Full URL: ${url}`)
+      console.log(`[getServerSideProps] Fetching from: ${url}`)
       
       const response = await fetch(url, { 
         method: 'GET',
@@ -1124,9 +1135,18 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
       
       if (response.ok) {
         const data = await response.json()
-        if (data.success && data.data) {
-          videoData = data
-          console.log(`[getServerSideProps] Successfully fetched video data for ${provider}/${id}`)
+        if (data.success) {
+          // Normalize response structure - FSIBlog uses 'video', others use 'data'
+          if (data.video && !data.data) {
+            data.data = data.video
+          }
+          
+          if (data.data) {
+            videoData = data
+            console.log(`[getServerSideProps] Successfully fetched video data for ${provider}/${id}`)
+          } else {
+            console.error(`[getServerSideProps] API response missing video data:`, data)
+          }
         } else {
           console.error(`[getServerSideProps] API response not successful:`, data.error)
         }

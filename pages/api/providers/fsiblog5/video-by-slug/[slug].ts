@@ -6,7 +6,7 @@ export default async function handler(
   res: NextApiResponse
 ) {
   try {
-    const { slug, category } = req.query;
+    const { slug, cat } = req.query;
     
     if (!slug || typeof slug !== 'string') {
       return res.status(400).json({
@@ -15,7 +15,7 @@ export default async function handler(
       });
     }
     
-    const categorySlug = category && typeof category === 'string' ? category : undefined;
+    const categorySlug = cat && typeof cat === 'string' ? cat : undefined;
     const video = await getVideoBySlug(slug, categorySlug);
     
     if (!video) {
