@@ -1,45 +1,84 @@
 import { GetServerSideProps } from "next"
+import { useState, useEffect } from "react"
 import Head from "next/head"
 import Link from "next/link"
-import { Play, Clock, ChevronLeft, ChevronRight } from "lucide-react"
+import { useRouter } from "next/router"
+import { Play, Clock, ChevronLeft, ChevronRight, Film, Tv, ArrowLeft } from "lucide-react"
 import { useNavigation } from "@/contexts/NavigationContext"
 import { useSidebar } from "@/contexts/SidebarContext"
 import type { WebseriesPost } from "@/types"
+import { trackPageInSitemap } from "@/services/sitemap-tracker"
 
-interface MergedWebseries {
+interface WebseriesItem {
   id: string
   title: string
   thumbnail: string
   duration: string
   quality: string
   link: string
-  source: 'webseries' | 'webxseries'
-  badge: string
 }
 
 interface WebseriesPageProps {
-  mergedWebseries: MergedWebseries[]
+  oldWebseries: WebseriesItem[]
+  webxseries: WebseriesItem[]
   currentPage: number
-  totalPages: number
-  totalItems: number
+  provider: 'webseries' | 'webxseries'
+  totalPagesOld: number
+  totalPagesWebx: number
+  totalItemsOld: number
+  totalItemsWebx: number
 }
 
 export default function WebseriesPage({ 
-  mergedWebseries, 
-  currentPage, 
-  totalPages,
-  totalItems 
+  oldWebseries,
+  webxseries,
+  currentPage,
+  provider: initialProvider,
+  totalPagesOld,
+  totalPagesWebx,
+  totalItemsOld,
+  totalItemsWebx
 }: WebseriesPageProps) {
+  const router = useRouter()
   const { setWebseriesPage } = useNavigation()
   const { isCollapsed } = useSidebar()
+  const [activeProvider, setActiveProvider] = useState<'webseries' | 'webxseries'>(initialProvider)
 
-  const itemsPerPage = 20
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const paginatedWebseries = mergedWebseries.slice(startIndex, endIndex)
+  // Save current state to sessionStorage whenever page or provider changes
+  useEffect(() => {
+    const webseriesState = {
+      page: currentPage,
+      provider: activeProvider
+    }
+    sessionStorage.setItem('webseriesState', JSON.stringify(webseriesState))
+  }, [currentPage, activeProvider])
 
-  const handleWebseriesClick = () => {
+  // Get current data based on active provider
+  const currentData = activeProvider === 'webseries' ? oldWebseries : webxseries
+  const totalPages = activeProvider === 'webseries' ? totalPagesOld : totalPagesWebx
+  const totalItems = activeProvider === 'webseries' ? totalItemsOld : totalItemsWebx
+
+  const handleWebseriesClick = (e: React.MouseEvent) => {
+    // Save state before navigation
+    const webseriesState = {
+      page: currentPage,
+      provider: activeProvider,
+      scrollPosition: window.scrollY
+    }
+    sessionStorage.setItem('webseriesState', JSON.stringify(webseriesState))
     setWebseriesPage(currentPage)
+  }
+
+  const handleProviderSwitch = (provider: 'webseries' | 'webxseries') => {
+    setActiveProvider(provider)
+    // Reset to page 1 when switching providers
+    if (provider !== initialProvider) {
+      window.location.href = `/webseries?provider=${provider}`
+    }
+  }
+
+  const handleBackClick = () => {
+    router.push('/')
   }
 
   return (
@@ -53,24 +92,67 @@ export default function WebseriesPage({
         <div className="container mx-auto px-4">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
-              <span className="w-1.5 h-8 bg-purple-500 rounded-full inline-block mr-3"></span>
-              Latest Webseries & OTT Content
-            </h1>
-            <p className="text-gray-400 ml-4">Discover the newest webseries and OTT platform content</p>
+            <div className="flex items-center gap-4 mb-4">
+              <button
+                onClick={handleBackClick}
+                className="p-2 hover:bg-gray-800/50 rounded-lg transition-colors"
+                title="Go back"
+              >
+                <ArrowLeft size={24} className="text-white" />
+              </button>
+              <h1 className="text-3xl font-bold text-white flex items-center">
+                <span className="w-1.5 h-8 bg-purple-500 rounded-full inline-block mr-3"></span>
+                Latest Webseries & OTT Content
+              </h1>
+            </div>
+            <p className="text-gray-400 ml-14">Discover the newest webseries and OTT platform content</p>
+          </div>
+
+          {/* Provider Switch */}
+          <div className="mb-8 flex justify-center">
+            <div className="inline-flex bg-gray-800/50 backdrop-blur-sm rounded-xl p-1.5 border border-gray-700/50">
+              <button
+                onClick={() => handleProviderSwitch('webseries')}
+                className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-300 ${
+                  activeProvider === 'webseries'
+                    ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-600/30'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Film size={20} />
+                <span>Web Series</span>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                  {totalItemsOld}
+                </span>
+              </button>
+              <button
+                onClick={() => handleProviderSwitch('webxseries')}
+                className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-300 ${
+                  activeProvider === 'webxseries'
+                    ? 'bg-gradient-to-r from-cyan-600 to-blue-700 text-white shadow-lg shadow-cyan-600/30'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Tv size={20} />
+                <span>OTT Platform</span>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                  {totalItemsWebx}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Webseries grid */}
-          {paginatedWebseries.length > 0 ? (
+          {currentData.length > 0 ? (
             <>
-              <div className={`grid gap-5 mb-8 ${
+              <div className={`grid gap-4 mb-8 ${
                 isCollapsed 
-                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6' 
-                  : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+                  ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5' 
+                  : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
               }`}>
-                {paginatedWebseries.map((series) => (
+                {currentData.map((series) => (
                   <Link
-                    key={`${series.source}-${series.id}`}
+                    key={series.id}
                     href={series.link}
                     onClick={handleWebseriesClick}
                     className="group flex flex-col bg-gray-800/40 rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] shadow-lg shadow-black/30 hover:shadow-purple-900/20"
@@ -104,14 +186,14 @@ export default function WebseriesPage({
                         </div>
                       )}
 
-                      {/* Source badge */}
+                      {/* Provider badge */}
                       <div className="absolute top-2 left-2">
                         <span className={`text-xs px-2 py-1 rounded-full font-medium backdrop-blur-sm ${
-                          series.source === 'webseries' 
+                          activeProvider === 'webseries' 
                             ? 'bg-gradient-to-r from-purple-500/90 to-pink-600/90 text-white' 
                             : 'bg-gradient-to-r from-cyan-500/90 to-blue-600/90 text-white'
                         }`}>
-                          {series.badge}
+                          {activeProvider === 'webseries' ? '🎬 Web Series' : '📺 OTT Platform'}
                         </span>
                       </div>
                     </div>
@@ -122,7 +204,11 @@ export default function WebseriesPage({
                       </h3>
                       {series.quality && (
                         <div className="mt-auto">
-                          <span className="inline-block px-2 py-1 bg-purple-600/20 text-purple-400 text-xs rounded border border-purple-500/30">
+                          <span className={`inline-block px-2 py-1 text-xs rounded border ${
+                            activeProvider === 'webseries'
+                              ? 'bg-purple-600/20 text-purple-400 border-purple-500/30'
+                              : 'bg-cyan-600/20 text-cyan-400 border-cyan-500/30'
+                          }`}>
                             {series.quality}
                           </span>
                         </div>
@@ -143,7 +229,7 @@ export default function WebseriesPage({
           {totalPages > 1 && (
             <div className="flex justify-center items-center space-x-2 mt-8">
               <Link
-                href={currentPage > 1 ? `/webseries?page=${currentPage - 1}` : '#'}
+                href={currentPage > 1 ? `/webseries?provider=${activeProvider}&page=${currentPage - 1}` : '#'}
                 className={`p-2 rounded-lg bg-gray-800/70 text-white hover:bg-purple-600/80 transition-colors ${
                   currentPage === 1 ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
                 }`}
@@ -167,7 +253,7 @@ export default function WebseriesPage({
                   return (
                     <Link
                       key={pageNum}
-                      href={pageNum === 1 ? '/webseries' : `/webseries?page=${pageNum}`}
+                      href={pageNum === 1 ? `/webseries?provider=${activeProvider}` : `/webseries?provider=${activeProvider}&page=${pageNum}`}
                       className={`min-w-[40px] h-10 flex items-center justify-center rounded-lg font-medium transition-all ${
                         currentPage === pageNum
                           ? "bg-purple-600 text-white shadow-lg shadow-purple-600/30"
@@ -181,7 +267,7 @@ export default function WebseriesPage({
               </div>
 
               <Link
-                href={currentPage < totalPages ? `/webseries?page=${currentPage + 1}` : '#'}
+                href={currentPage < totalPages ? `/webseries?provider=${activeProvider}&page=${currentPage + 1}` : '#'}
                 className={`p-2 rounded-lg bg-gray-800/70 text-white hover:bg-purple-600/80 transition-colors ${
                   currentPage === totalPages ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
                 }`}
@@ -193,7 +279,7 @@ export default function WebseriesPage({
 
           {/* Page info */}
           <div className="text-center mt-4 text-gray-400 text-sm">
-            Page {currentPage} of {totalPages} • Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} items
+            Page {currentPage} of {totalPages} • Total {totalItems} items
           </div>
         </div>
       </div>
@@ -202,151 +288,236 @@ export default function WebseriesPage({
 }
 
 export const getServerSideProps: GetServerSideProps = async (context) => {
-  const { page = '1' } = context.query
+  const { page = '1', provider = 'webxseries' } = context.query
   const currentPage = parseInt(Array.isArray(page) ? page[0] : page, 10) || 1
+  const activeProvider = (Array.isArray(provider) ? provider[0] : provider) as 'webseries' | 'webxseries'
+  
+  const itemsPerPage = 48 // Increased from 20 to 48
   
   try {
-    console.log(`[SSR] Fetching data for page ${currentPage}`)
+    console.log(`[SSR Webseries] Fetching ${activeProvider} data for page ${currentPage}`)
     
-    // Calculate how many pages we need to fetch
-    const itemsPerPage = 20
-    const requiredItems = currentPage * itemsPerPage
+    let oldWebseries: WebseriesItem[] = []
+    let webxseries: WebseriesItem[] = []
+    let totalPagesOld = 1
+    let totalPagesWebx = 1
+    let totalItemsOld = 0
+    let totalItemsWebx = 0
     
-    // With 2:1 ratio, we need (requiredItems * 2/3) old webseries items
-    // Assuming ~12 items per page, calculate pages needed
-    const neededOldPages = Math.ceil((requiredItems * 2) / 3 / 12)
-    const pagesToFetch = Math.max(neededOldPages, 5) // Minimum 5 pages
+    const baseUrl = typeof window === 'undefined' 
+      ? (process.env.NEXT_PUBLIC_API_BASE_URL || `http://localhost:${process.env.PORT || 3000}`)
+      : window.location.origin
     
-    console.log(`[SSR] Need ${requiredItems} items, fetching ${pagesToFetch} pages of old webseries`)
+    console.log('[SSR Webseries] Base URL:', baseUrl)
+    console.log('[SSR Webseries] Current page:', currentPage, 'Active provider:', activeProvider)
     
-    // Fetch old webseries pages
-    const oldWebseriesPromises = []
-    for (let p = 1; p <= pagesToFetch; p++) {
-      oldWebseriesPromises.push(
-        fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000'}/webseries/api/latest${p === 1 ? '' : `/page${p}`}`)
-          .then(res => res.json())
-          .catch(err => {
-            console.error(`Error fetching old webseries page ${p}:`, err)
-            return { posts: [] }
+    // Fetch Old Webseries data if that's the active provider
+    if (activeProvider === 'webseries') {
+      try {
+        // Use client-side API that handles the proxy
+        const oldWebseriesUrl = `${baseUrl}/api/proxy/webseries/api/latest${currentPage === 1 ? '' : `/page${currentPage}`}`
+        console.log('[SSR Webseries] Fetching old webseries from:', oldWebseriesUrl)
+        
+        const response = await fetch(oldWebseriesUrl, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (!response.ok) {
+          console.error('[SSR Webseries] Old webseries response not OK:', response.status, response.statusText)
+          throw new Error(`HTTP ${response.status}`)
+        }
+        
+        const data = await response.json()
+        console.log('[SSR Webseries] Old webseries response keys:', Object.keys(data))
+        
+        if (data.posts && Array.isArray(data.posts)) {
+          oldWebseries = data.posts.map((post: any) => {
+            // Extract slug from the link or use the ID
+            let slug = post.slug || post.id
+            
+            // If link exists and contains a slug, extract it
+            if (post.link && typeof post.link === 'string') {
+              const linkMatch = post.link.match(/\/([^\/]+)\/?$/)
+              if (linkMatch && linkMatch[1]) {
+                slug = linkMatch[1]
+              }
+            }
+            
+            return {
+              id: post.id || slug,
+              title: post.title,
+              thumbnail: post.thumbnail,
+              duration: post.duration || 'Unknown',
+              quality: post.quality || 'HD',
+              link: `/webseries/${slug}`, // Use internal route instead of external link
+            }
           })
-      )
+          
+          console.log('[SSR Webseries] Transformed old webseries:', oldWebseries.length)
+          
+          // Update totals based on actual data
+          if (oldWebseries.length > 0) {
+            totalItemsOld = oldWebseries.length + (currentPage - 1) * 12
+            totalPagesOld = Math.ceil(totalItemsOld / 12) + 10
+          }
+        } else {
+          console.error('[SSR Webseries] Invalid old webseries response format, data:', data)
+        }
+      } catch (err) {
+        console.error('[SSR Webseries] Error fetching old webseries:', err)
+        // Set estimate even on error so button shows
+        totalItemsOld = 100
+        totalPagesOld = 10
+      }
+    } else {
+      // Set estimates for old webseries when not active
+      totalItemsOld = 100
+      totalPagesOld = 10
     }
     
-    // Fetch WebXSeries - calculate how many we need
-    const neededWebXSeries = Math.ceil((requiredItems * 1) / 3)
-    const webxseriesLimit = Math.max(neededWebXSeries, 150)
+    // Fetch WebXSeries data if that's the active provider
+    if (activeProvider === 'webxseries') {
+      try {
+        const webxUrl = `${baseUrl}/api/v2/providers/webxseries/videos?page=${currentPage}&limit=${itemsPerPage}`
+        console.log('[SSR Webseries] Fetching webxseries from:', webxUrl)
+        
+        const response = await fetch(webxUrl, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        console.log('[SSR Webseries] WebXSeries response status:', response.status)
+        
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('[SSR Webseries] WebXSeries response not OK:', response.status, response.statusText, errorText)
+          throw new Error(`HTTP ${response.status}: ${errorText}`)
+        }
+        
+        const data = await response.json()
+        console.log('[SSR Webseries] WebXSeries response:', {
+          success: data.success,
+          dataLength: data.data?.length,
+          pagination: data.pagination,
+          hasData: !!data.data
+        })
+        
+        if (data.success && data.data && Array.isArray(data.data)) {
+          webxseries = data.data.map((video: any) => ({
+            id: video.id || video.slug,
+            title: video.title,
+            thumbnail: video.thumbnail || video.thumbnailUrl,
+            duration: video.duration || 'Unknown',
+            quality: video.categories?.[0] || 'OTT',
+            link: `/provider/webxseries/video/${video.slug}`,
+          }))
+          
+          console.log('[SSR Webseries] Transformed webxseries:', webxseries.length, 'items')
+          
+          // Get pagination info from response
+          if (data.pagination) {
+            totalItemsWebx = data.pagination.total || webxseries.length
+            totalPagesWebx = data.pagination.totalPages || Math.ceil(totalItemsWebx / itemsPerPage)
+            console.log('[SSR Webseries] WebXSeries pagination:', { total: totalItemsWebx, pages: totalPagesWebx })
+          } else {
+            totalItemsWebx = webxseries.length
+            totalPagesWebx = currentPage // At least current page exists
+            console.log('[SSR Webseries] No pagination info, using data length')
+          }
+        } else {
+          console.error('[SSR Webseries] Invalid webxseries response format')
+          console.error('[SSR Webseries] Response data:', JSON.stringify(data, null, 2))
+        }
+      } catch (err) {
+        console.error('[SSR Webseries] Error fetching WebXSeries:', err)
+      }
+    } else {
+      // Always fetch count for webxseries to show on button
+      try {
+        const webxCountUrl = `${baseUrl}/api/v2/providers/webxseries/videos?page=1&limit=1`
+        console.log('[SSR Webseries] Fetching webxseries count from:', webxCountUrl)
+        
+        const webxCountResponse = await fetch(webxCountUrl, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (webxCountResponse.ok) {
+          const webxCountData = await webxCountResponse.json()
+          console.log('[SSR Webseries] WebXSeries count response:', webxCountData.pagination)
+          
+          if (webxCountData.success && webxCountData.pagination) {
+            totalItemsWebx = webxCountData.pagination.total || 0
+            totalPagesWebx = webxCountData.pagination.totalPages || 1
+          }
+        }
+      } catch (err) {
+        console.error('[SSR Webseries] Error fetching webxseries count:', err)
+      }
+    }
     
-    console.log(`[SSR] Fetching ${webxseriesLimit} WebXSeries items`)
+    console.log(`[SSR Webseries] ========== FINAL RESULTS ==========`)
+    console.log(`[SSR Webseries] Active Provider: ${activeProvider}`)
+    console.log(`[SSR Webseries] Old Webseries: ${oldWebseries.length} items, Total: ${totalItemsOld}, Pages: ${totalPagesOld}`)
+    console.log(`[SSR Webseries] WebXSeries: ${webxseries.length} items, Total: ${totalItemsWebx}, Pages: ${totalPagesWebx}`)
+    console.log(`[SSR Webseries] =====================================`)
     
-    const webxseriesPromise = fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000'}/api/v2/providers/webxseries/videos?page=1&limit=${webxseriesLimit}`
-    )
-      .then(res => res.json())
-      .catch(err => {
-        console.error('Error fetching WebXSeries:', err)
-        return { success: false, data: [] }
+    // Track webseries in sitemap (limit to first 10)
+    const currentItems = activeProvider === 'webseries' ? oldWebseries : webxseries
+    const itemsToTrack = currentItems.slice(0, 10)
+    
+    for (const item of itemsToTrack) {
+      await trackPageInSitemap({
+        type: 'webseries',
+        data: {
+          slug: item.id,
+          title: item.title,
+          provider: activeProvider,
+          url: item.link,
+          thumbnail: item.thumbnail
+        }
       })
-    
-    // Wait for all fetches to complete
-    const [oldWebseriesResults, webxseriesResult] = await Promise.all([
-      Promise.all(oldWebseriesPromises),
-      webxseriesPromise
-    ])
-    
-    // Combine all old webseries
-    const allOldWebseries = oldWebseriesResults.flatMap(result => result.posts || [])
-    const allWebXSeries = webxseriesResult.success ? webxseriesResult.data : []
-    
-    console.log(`[SSR] Fetched ${allOldWebseries.length} old webseries, ${allWebXSeries.length} WebXSeries`)
-    
-    // Transform old webseries
-    const oldWebseries = allOldWebseries.map((post: any) => ({
-      id: post.id,
-      title: post.title,
-      thumbnail: post.thumbnail,
-      duration: post.duration,
-      quality: post.quality || 'HD',
-      link: post.link,
-      source: 'webseries' as const,
-      badge: '🎬 Web Series',
-    }))
-
-    // Transform WebXSeries
-    const newWebxseries = allWebXSeries.map((video: any) => ({
-      id: video.id || video.slug,
-      title: video.title,
-      thumbnail: video.thumbnail || video.thumbnailUrl,
-      duration: video.duration || 'Unknown',
-      quality: video.categories?.[0] || 'OTT',
-      link: `/provider/webxseries/video/${video.slug}`,
-      source: 'webxseries' as const,
-      badge: '📺 OTT Platform',
-    }))
-
-    // Interleave both sources: 2 old, 1 new, repeat
-    const merged: MergedWebseries[] = []
-    let oldIndex = 0
-    let newIndex = 0
-    
-    while (oldIndex < oldWebseries.length || newIndex < newWebxseries.length) {
-      // Add 2 from old webseries
-      if (oldIndex < oldWebseries.length) {
-        merged.push(oldWebseries[oldIndex++])
-      }
-      if (oldIndex < oldWebseries.length) {
-        merged.push(oldWebseries[oldIndex++])
-      }
-      
-      // Add 1 from webxseries
-      if (newIndex < newWebxseries.length) {
-        merged.push(newWebxseries[newIndex++])
-      }
-    }
-    
-    console.log(`[SSR] Merged ${merged.length} total items`)
-    
-    const totalItems = merged.length
-    const totalPages = Math.ceil(totalItems / itemsPerPage)
-    
-    // If requested page is beyond available pages, redirect to last page
-    if (currentPage > totalPages && totalPages > 0) {
-      return {
-        redirect: {
-          destination: `/webseries?page=${totalPages}`,
-          permanent: false,
-        },
-      }
     }
     
     return {
       props: {
-        mergedWebseries: merged,
+        oldWebseries,
+        webxseries,
         currentPage,
-        totalPages,
-        totalItems,
+        provider: activeProvider,
+        totalPagesOld,
+        totalPagesWebx,
+        totalItemsOld,
+        totalItemsWebx,
       },
     }
   } catch (error) {
-    console.error('[SSR] Error fetching webseries:', error)
+    console.error('[SSR Webseries] Fatal error:', error)
     
     return {
       props: {
-        mergedWebseries: [],
+        oldWebseries: [],
+        webxseries: [],
         currentPage: 1,
-        totalPages: 1,
-        totalItems: 0,
+        provider: activeProvider,
+        totalPagesOld: 1,
+        totalPagesWebx: 1,
+        totalItemsOld: 0,
+        totalItemsWebx: 0,
       },
     }
   }
 }
 
-interface MergedWebseries {
+interface WebseriesItem {
   id: string
   title: string
   thumbnail: string
   duration: string
   quality: string
   link: string
-  source: 'webseries' | 'webxseries'
-  badge: string
 }

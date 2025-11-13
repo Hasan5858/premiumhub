@@ -217,6 +217,20 @@ export function scrapeVideoDetails(html: string): ScrapedVideoDetails | null {
           }
         })
       }
+      console.log(`[scraper] Extracted ${tags.length} tags from video page: ${tags.join(', ')}`)
+    } else {
+      console.log('[scraper] No tag section found (gwt div), searching alternative patterns...')
+      // Alternative: Try to find tags from other common structures
+      const altTagPattern = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi
+      let altMatch
+      while ((altMatch = altTagPattern.exec(html)) !== null) {
+        if (altMatch[1] && !altMatch[1].includes('Home')) {
+          tags.push(altMatch[1].trim())
+        }
+      }
+      if (tags.length > 0) {
+        console.log(`[scraper] Found ${tags.length} tags via alternative pattern: ${tags.join(', ')}`)
+      }
     }
 
     // Extract views

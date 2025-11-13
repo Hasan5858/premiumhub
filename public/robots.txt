@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://premiumhub.vip
+
+# Sitemaps
+Sitemap: https://premiumhub.vip/sitemap/index.xml

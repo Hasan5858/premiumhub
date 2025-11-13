@@ -10,6 +10,7 @@ import { hasCacheItem } from "@/services/cache"
 import PremiumBadge from "@/components/PremiumBadge"
 import { useAuth } from "@/contexts/AuthContext"
 import { useSidebar } from "@/contexts/SidebarContext"
+import { trackPage } from "@/utils/sitemap-client"
 
 export default function ProviderPage() {
   const router = useRouter()
@@ -111,6 +112,40 @@ export default function ProviderPage() {
       if (data && (data.data || data.videos)) {
         const videoList = data.videos || data.data || []
         setVideos(videoList)
+        
+        // Track category in sitemap
+        const categorySlug = categoryUrl.split('/').filter((p: string) => p && p.length > 0).pop() || ''
+        trackPage({
+          type: 'category',
+          data: {
+            slug: categorySlug,
+            title: categorySlug.replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            provider: providerName,
+            url: `/provider/${providerName}?cat=${categorySlug}`,
+            post_count: videoList.length
+          }
+        })
+
+        // Track videos (limit to first 10 to avoid too many requests)
+        const videosToTrack = videoList.slice(0, 10)
+        for (const video of videosToTrack) {
+          const videoSlug = video.id || video.slug || video.url?.split('/').pop()
+          if (videoSlug) {
+            trackPage({
+              type: 'video',
+              data: {
+                slug: videoSlug,
+                title: video.title,
+                provider: providerName,
+                category: categorySlug,
+                url: `/provider/${providerName}/video/${videoSlug}`,
+                thumbnail: video.thumbnail || video.thumbnailUrl || '',
+                duration: video.duration,
+                views: parseInt(video.views?.toString().replace(/[^0-9]/g, '') || '0', 10)
+              }
+            })
+          }
+        }
         
         // FSIBlog, Superporn, KamaBaba, and WebXSeries categories have pagination, IndianPornHQ don't
         if (providerName === 'fsiblog5') {
@@ -335,6 +370,38 @@ export default function ProviderPage() {
 
       const videoList = data.videos || data.data || []
       setVideos(videoList)
+      
+      // Track provider page
+      trackPage({
+        type: 'provider',
+        data: {
+          slug: providerName,
+          title: providerName.charAt(0).toUpperCase() + providerName.slice(1),
+          url: `/provider/${providerName}`,
+          categories: []
+        }
+      })
+
+      // Track videos (limit to first 10)
+      const videosToTrack = videoList.slice(0, 10)
+      for (const video of videosToTrack) {
+        const videoSlug = video.id || video.slug || video.url?.split('/').pop()
+        if (videoSlug) {
+          trackPage({
+            type: 'video',
+            data: {
+              slug: videoSlug,
+              title: video.title,
+              provider: providerName,
+              category: 'latest',
+              url: `/provider/${providerName}/video/${videoSlug}`,
+              thumbnail: video.thumbnail || video.thumbnailUrl || '',
+              duration: video.duration,
+              views: parseInt(video.views?.toString().replace(/[^0-9]/g, '') || '0', 10)
+            }
+          })
+        }
+      }
       
       // For FSIBlog, KamaBaba, and WebXSeries, support real pagination
       if (providerName === 'fsiblog5') {
@@ -709,7 +776,9 @@ export default function ProviderPage() {
                 
                 if (providerName === 'fsiblog5') {
                   // FSIBlog uses slug directly
-                  videoUrl = `/provider/${provider}/video/${video.slug || encodeURIComponent(video.id || `video-${index}`)}`
+                  // Check if it's a gallery or video
+                  const contentType = video.type === 'sex-gallery' ? 'gallery' : 'video'
+                  videoUrl = `/provider/${provider}/${contentType}/${video.slug || encodeURIComponent(video.id || `video-${index}`)}`
                   if (selectedCategory) {
                     const urlParts = selectedCategory.split('/').filter((p: string) => p && p.length > 0)
                     const categorySlug = urlParts[urlParts.length - 1] || ''

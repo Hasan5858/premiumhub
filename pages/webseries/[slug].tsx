@@ -7,6 +7,7 @@ import { fetchWebseriesDetails, fetchLatestWebseries } from "@/services/api"
 import { useNavigation } from "@/contexts/NavigationContext"
 import MembershipCheck from "@/components/MembershipCheck"
 import type { WebseriesDetails } from "@/types"
+import { trackPage } from "@/utils/sitemap-client"
 
 // Define an extended interface for our processed video data
 interface ProcessedVideoData extends WebseriesDetails {
@@ -37,11 +38,34 @@ export default function WebseriesVideoPage() {
           .replace(/\b\w/g, (l) => l.toUpperCase())
       : "Webseries"
 
-  // Back button handler with proper page
+  // Back button handler with proper page and provider
   const handleBackClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    const pageQuery = navigationState.webseriesPage > 1 ? `?page=${navigationState.webseriesPage}` : '';
-    router.push(`/webseries${pageQuery}`);
+    
+    // Try to get saved state from sessionStorage
+    const savedState = sessionStorage.getItem('webseriesState');
+    if (savedState) {
+      try {
+        const { page, provider, scrollPosition } = JSON.parse(savedState);
+        const pageQuery = page > 1 ? `&page=${page}` : '';
+        const providerQuery = provider || 'webxseries';
+        const url = `/webseries?provider=${providerQuery}${pageQuery}`;
+        
+        // Navigate and restore scroll position
+        router.push(url).then(() => {
+          if (scrollPosition) {
+            setTimeout(() => window.scrollTo(0, scrollPosition), 100);
+          }
+        });
+        return;
+      } catch (err) {
+        console.error('Failed to parse webseries state:', err);
+      }
+    }
+    
+    // Fallback to navigationState
+    const pageQuery = navigationState.webseriesPage > 1 ? `&page=${navigationState.webseriesPage}` : '';
+    router.push(`/webseries?provider=webxseries${pageQuery}`);
   };
 
   // Function to extract iframe src from HTML string
@@ -119,6 +143,18 @@ export default function WebseriesVideoPage() {
         }
 
         setVideoData(processedData)
+
+        // Track webseries in sitemap
+        trackPage({
+          type: 'webseries',
+          data: {
+            slug: slug as string,
+            title: processedData.video.title || formattedTitle,
+            provider: 'webseries',
+            url: `/webseries/${slug}`,
+            thumbnail: processedData.video.poster || ''
+          }
+        })
 
         // Fetch related content - use a random page between 1-5 to get variety
         const randomPage = Math.floor(Math.random() * 5) + 1

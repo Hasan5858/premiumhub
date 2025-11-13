@@ -21,14 +21,24 @@ export class WebXSeriesProvider extends BaseProvider {
   async fetchVideos(params?: PaginationParams): Promise<ProviderResponse<UnifiedVideoData[]>> {
     try {
       const { page = 1, limit = 12 } = params || {};
-      console.log(`[WebXSeriesProvider] Fetching videos for page ${page}`);
+      console.log(`[WebXSeriesProvider] Fetching videos for page ${page}, limit ${limit}`);
       
       const videos = await webxseriesService.fetchHomepageVideos(page);
       const normalizedVideos = videos.map(video => this.normalizeVideo(video));
       
+      // Since we can't get exact total from the site, estimate based on results
+      // WebXSeries typically has around 30 items per page
+      const hasMore = videos.length >= 20; // If we got a decent number, assume there are more pages
+      const estimatedTotal = hasMore ? (page * videos.length) + limit : page * videos.length;
+      const totalPages = Math.ceil(estimatedTotal / limit);
+      
+      console.log(`[WebXSeriesProvider] Fetched ${normalizedVideos.length} videos, hasMore: ${hasMore}, estimated total: ${estimatedTotal}, totalPages: ${totalPages}`);
+      
       return this.createSuccessResponse(normalizedVideos, {
         currentPage: page,
-        hasMore: videos.length >= limit,
+        totalPages,
+        total: estimatedTotal,
+        hasMore,
       });
     } catch (error) {
       console.error('[WebXSeriesProvider] Error fetching videos:', error);

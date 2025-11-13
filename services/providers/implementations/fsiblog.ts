@@ -469,7 +469,7 @@ export class FSIBlogProvider extends BaseProvider {
             let imgUrl = match[1];
             imgUrl = this.removeImageSizeSuffix(imgUrl);
             imgUrl = this.normalizeUrl(imgUrl);
-            imgUrl = this.proxyImage(imgUrl);
+            // Don't proxy here - will proxy at the end when returning data
             galleryImages.push(imgUrl);
           }
           
@@ -495,7 +495,7 @@ export class FSIBlogProvider extends BaseProvider {
               
               imgUrl = this.removeImageSizeSuffix(imgUrl);
               imgUrl = this.normalizeUrl(imgUrl);
-              imgUrl = this.proxyImage(imgUrl);
+              // Don't proxy here - will proxy at the end when returning data
               galleryImages.push(imgUrl);
             }
             
@@ -523,7 +523,7 @@ export class FSIBlogProvider extends BaseProvider {
         categories,
         tags,
         uploadDate,
-        galleryImages: galleryImages.length > 0 ? galleryImages : undefined,
+        galleryImages: galleryImages.length > 0 ? galleryImages.map(img => this.proxyImage(img)) : undefined,
         relatedVideos: relatedVideos.length > 0 ? relatedVideos : undefined,
         views: "0",
         duration: "0",

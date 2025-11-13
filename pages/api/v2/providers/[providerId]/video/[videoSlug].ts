@@ -52,6 +52,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Fetch video details
     const result = await provider.getVideoDetails(videoSlug, categorySlug);
 
+    console.log(`[API v2] Video details response for ${providerId}/${videoSlug}:`, {
+      success: result.success,
+      hasTags: result.data?.tags ? true : false,
+      tagsCount: result.data?.tags?.length || 0,
+      tags: result.data?.tags
+    })
+
     // Return result
     const statusCode = result.success ? 200 : 500;
     res.status(statusCode).json(result);

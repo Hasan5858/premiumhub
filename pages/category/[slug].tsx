@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Clock, Eye } from "lucide-react"
 import { fetchCategoryVideos } from "@/services/api"
 import { hasCacheItem } from "@/services/cache"
 import { useNavigation } from "@/contexts/NavigationContext"
+import { trackPage } from "@/utils/sitemap-client"
 import type { CategoryDetails } from "@/types"
 
 export default function CategoryPage() {
@@ -64,6 +65,59 @@ export default function CategoryPage() {
       // Save current page in navigation context
       if (typeof categorySlug === "string") {
         setCategoryPage(categorySlug, pageNum)
+      }
+
+      // Track category in sitemap
+      trackPage({
+        type: 'category',
+        data: {
+          slug: categorySlug,
+          title: data.category.name,
+          provider: 'superporn', // Default provider for categories
+          url: `/category/${categorySlug}`,
+          post_count: data.videos.length
+        }
+      })
+
+      // Track all videos on this page in sitemap (limit to first 20)
+      const videosToTrack = data.videos.slice(0, 20)
+      for (const video of videosToTrack) {
+        trackPage({
+          type: 'video',
+          data: {
+            slug: video.id,
+            title: video.title,
+            provider: 'superporn', // Default provider for videos
+            category: categorySlug,
+            url: `/video/${video.id}`,
+            thumbnail: video.thumbnail || '',
+            duration: video.duration,
+            views: parseInt(video.views?.replace(/[^0-9]/g, '') || '0', 10)
+          }
+        })
+
+        // Track tags from video
+        const videoAny = video as any
+        if (videoAny.tags && Array.isArray(videoAny.tags) && videoAny.tags.length > 0) {
+          for (const tag of videoAny.tags) {
+            const tagSlug = typeof tag === 'string' 
+              ? tag.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+              : tag.slug || tag.name?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+            
+            if (tagSlug) {
+              trackPage({
+                type: 'tag',
+                data: {
+                  slug: tagSlug,
+                  title: typeof tag === 'string' ? tag : tag.name || tagSlug,
+                  provider: 'superporn',
+                  url: `/search?q=${encodeURIComponent(typeof tag === 'string' ? tag : tag.name || tagSlug)}`,
+                  post_count: 1
+                }
+              })
+            }
+          }
+        }
       }
     } catch (err) {
       console.error("Error loading category data:", err)

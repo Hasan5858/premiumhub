@@ -87,7 +87,9 @@ export default function CategoryGrid({
                 `/api/placeholder?height=400&width=400&query=${encodeURIComponent(category.name)}%20videos`
               }
               alt={category.name}
-              className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-75 group-hover:brightness-90"
+              className={`w-full h-full object-cover transition-all duration-700 group-hover:scale-110 brightness-75 group-hover:brightness-90 ${
+                provider === 'indianpornhq' ? 'rotate-180' : ''
+              }`}
               loading="lazy"
               onError={(e) => {
                 const target = e.target as HTMLImageElement

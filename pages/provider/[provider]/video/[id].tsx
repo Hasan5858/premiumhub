@@ -10,6 +10,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import dynamic from 'next/dynamic'
 import type Artplayer from 'artplayer'
 import { GetServerSideProps } from "next"
+import { trackPage } from "@/utils/sitemap-client"
 
 // Dynamically import ArtPlayer to avoid SSR issues
 const ArtPlayer = dynamic(() => import('@/components/ArtPlayer'), {
@@ -46,6 +47,38 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
   const providerName = typeof provider === 'string' ? provider : Array.isArray(provider) ? provider[0] : ''
   const isIndianPornHQ = providerName === 'indianpornhq'
 
+  // Helper function to safely proxy images (avoids double-proxying)
+  const safeProxyImage = (imgUrl: string): string => {
+    if (!imgUrl) return ''
+    
+    // Check if already proxied - simple string check
+    if (imgUrl.startsWith('https://fsiblog5.premiumhub.workers.dev/') || 
+        imgUrl.includes('fsiblog5.premiumhub.workers.dev/?url=')) {
+      return imgUrl
+    }
+    
+    // Try decoding to check if it contains proxy URL when decoded
+    try {
+      const decodedUrl = decodeURIComponent(imgUrl)
+      if (decodedUrl.includes('fsiblog5.premiumhub.workers.dev')) {
+        return imgUrl
+      }
+    } catch (e) {
+      // Ignore decode errors
+    }
+    
+    // Not proxied, add proxy
+    return `https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(imgUrl)}`
+  }
+
+  // Reset states when video ID changes
+  useEffect(() => {
+    setIframeLoading(true)
+    setShowTags(false)
+    setLightboxOpen(false)
+    setSearchOpen(false)
+  }, [id])
+
   // Check if user has premium access
   const hasPremiumAccess =
     user &&
@@ -80,6 +113,32 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
   const handleBackClick = (e: React.MouseEvent) => {
     e.preventDefault();
     
+    // Check if this is webxseries - should return to webseries page
+    if (providerName === 'webxseries') {
+      const savedState = sessionStorage.getItem('webseriesState');
+      if (savedState) {
+        try {
+          const { page, provider: savedProvider, scrollPosition } = JSON.parse(savedState);
+          const pageQuery = page > 1 ? `&page=${page}` : '';
+          const providerQuery = savedProvider || 'webxseries';
+          const url = `/webseries?provider=${providerQuery}${pageQuery}`;
+          
+          // Navigate and restore scroll position
+          router.push(url).then(() => {
+            if (scrollPosition) {
+              setTimeout(() => window.scrollTo(0, scrollPosition), 100);
+            }
+          });
+          return;
+        } catch (err) {
+          console.error('Failed to parse webseries state:', err);
+        }
+      }
+      // Fallback to webseries page
+      router.push('/webseries?provider=webxseries');
+      return;
+    }
+    
     // Check if we came from a category page (via URL query param)
     if (categorySlug) {
       // Navigate back to category page
@@ -94,6 +153,9 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
   
   // Get back button text
   const getBackButtonText = () => {
+    if (providerName === 'webxseries') {
+      return 'Back to Webseries'
+    }
     if (categorySlug) {
       return `Back to ${getCategoryName(categorySlug)}`
     }
@@ -102,13 +164,22 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
 
   useEffect(() => {
     async function loadVideoData() {
-      // Skip loading if we already have initial data from SSR
-      if (initialVideoData) {
-        console.log('[Client] Using SSR data, skipping fetch')
+      // Client-side navigation handling:
+      // - On initial SSR load: initialVideoData exists and matches current ID → skip fetch
+      // - On navigation: initialVideoData exists but videoData has different ID → fetch new data
+      // - This ensures video updates when navigating between videos without page reload
+      const isClientNavigation = initialVideoData && videoData && 
+        (videoData.seo_slug !== id && videoData.data?.slug !== id && videoData.data?.seo_slug !== id)
+      
+      // Skip loading only if we have SSR data for THIS specific video
+      if (initialVideoData && !isClientNavigation) {
+        console.log('[Client] Using SSR data, skipping fetch for video:', id)
         return
       }
 
       if (!id || !provider) return
+
+      console.log('[Client] Fetching video data for:', id, 'isClientNavigation:', isClientNavigation)
 
       try {
         setLoading(true)
@@ -218,6 +289,70 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
         setVideoData(data)
         setIframeLoading(true) // Reset iframe loading state for new video
 
+        // Track video in sitemap
+        trackPage({
+          type: 'video',
+          data: {
+            slug: id as string,
+            title: data.data.title || formattedTitle,
+            provider: providerName,
+            category: categorySlug || 'uncategorized',
+            url: `/provider/${provider}/video/${id}`,
+            thumbnail: data.data.thumbnail || data.data.posterUrl || '',
+            duration: data.data.duration,
+            views: parseInt(data.data.views?.toString().replace(/[^0-9]/g, '') || '0', 10)
+          }
+        })
+
+        // Track tags from video (extract and track each tag)
+        if (data.data.tags && Array.isArray(data.data.tags) && data.data.tags.length > 0) {
+          console.log(`[Sitemap] Found ${data.data.tags.length} tags in video:`, data.data.tags)
+          for (const tag of data.data.tags) {
+            const tagSlug = typeof tag === 'string' 
+              ? tag.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+              : tag.slug || tag.name?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+            
+            if (tagSlug) {
+              console.log(`[Sitemap] Tracking tag: ${tagSlug} (${typeof tag === 'string' ? tag : tag.name})`)
+              trackPage({
+                type: 'tag',
+                data: {
+                  slug: tagSlug,
+                  title: typeof tag === 'string' ? tag : tag.name || tagSlug,
+                  provider: providerName,
+                  url: `/search?q=${encodeURIComponent(typeof tag === 'string' ? tag : tag.name || tagSlug)}`,
+                  post_count: 1
+                }
+              })
+            }
+          }
+        } else {
+          console.log('[Sitemap] No tags found in video data')
+        }
+
+        // Track related videos (limit to 5)
+        if (data.data.related_videos && data.data.related_videos.length > 0) {
+          const relatedToTrack = data.data.related_videos.slice(0, 5)
+          for (const related of relatedToTrack) {
+            const relatedSlug = related.id || related.slug || related.url?.split('/').pop()
+            if (relatedSlug) {
+              trackPage({
+                type: 'video',
+                data: {
+                  slug: relatedSlug,
+                  title: related.title,
+                  provider: providerName,
+                  category: categorySlug || 'uncategorized',
+                  url: `/provider/${provider}/video/${relatedSlug}`,
+                  thumbnail: related.thumbnail || related.thumbnailUrl || '',
+                  duration: related.duration,
+                  views: parseInt(related.views?.toString().replace(/[^0-9]/g, '') || '0', 10)
+                }
+              })
+            }
+          }
+        }
+
       } catch (err) {
         console.error("Error loading video:", err)
         const errorMessage = err instanceof Error ? err.message : "Failed to load video. Please try again later."
@@ -238,15 +373,59 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
     loadVideoData()
   }, [id, provider, initialVideoData])
 
-  // Cleanup ArtPlayer on unmount
+  // Track tags immediately when SSR data is available
   useEffect(() => {
+    if (initialVideoData && initialVideoData.data && initialVideoData.data.tags) {
+      console.log(`[Sitemap] SSR - Found ${initialVideoData.data.tags.length} tags in initial video data:`, initialVideoData.data.tags)
+      
+      for (const tag of initialVideoData.data.tags) {
+        const tagSlug = typeof tag === 'string' 
+          ? tag.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+          : tag.slug || tag.name?.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+        
+        if (tagSlug) {
+          console.log(`[Sitemap] SSR - Tracking tag: ${tagSlug} (${typeof tag === 'string' ? tag : tag.name})`)
+          trackPage({
+            type: 'tag',
+            data: {
+              slug: tagSlug,
+              title: typeof tag === 'string' ? tag : tag.name || tagSlug,
+              provider: providerName,
+              url: `/search?q=${encodeURIComponent(typeof tag === 'string' ? tag : tag.name || tagSlug)}`,
+              post_count: 1
+            }
+          })
+        }
+      }
+    } else if (initialVideoData && (!initialVideoData.data || !initialVideoData.data.tags)) {
+      console.log('[Sitemap] SSR - No tags found in initial video data')
+    }
+  }, [initialVideoData, providerName])
+
+  // Cleanup ArtPlayer when video changes or component unmounts
+  useEffect(() => {
+    // Destroy previous player instance when video changes
     return () => {
       if (artPlayerRef.current) {
+        console.log('[ArtPlayer] Destroying player instance')
         artPlayerRef.current.destroy(false)
         artPlayerRef.current = null
       }
     }
-  }, [])
+  }, [id]) // Re-run when video ID changes
+
+  // Handle iframe loading timeout (for xHamster and embed players that may not fire onLoad)
+  useEffect(() => {
+    if (iframeLoading && videoData?.data?.xhamsterEmbedUrl) {
+      console.log('[xHamster] Iframe loading, setting timeout to auto-hide spinner after 3 seconds')
+      const timeout = setTimeout(() => {
+        console.log('[xHamster] Timeout reached, hiding loading spinner')
+        setIframeLoading(false)
+      }, 3000)
+      
+      return () => clearTimeout(timeout)
+    }
+  }, [iframeLoading, videoData?.data?.xhamsterEmbedUrl])
 
   // Lightbox functions for gallery images
   const openLightbox = (index: number) => {
@@ -589,7 +768,7 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
                           {videoData.data.galleryImages.slice(0, 4).map((imgUrl: string, index: number) => (
                             <div key={index} className="relative aspect-square rounded-xl overflow-hidden group">
                               <img
-                                src={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(imgUrl)}`}
+                                src={safeProxyImage(imgUrl)}
                                 alt={`Gallery image ${index + 1}`}
                                 className="w-full h-full object-cover blur-md grayscale"
                               />
@@ -622,7 +801,7 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
                             className="relative aspect-square rounded-xl overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500"
                           >
                             <img
-                              src={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(imgUrl)}`}
+                              src={safeProxyImage(imgUrl)}
                               alt={`Gallery image ${index + 1}`}
                               className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110"
                               loading="lazy"
@@ -664,20 +843,49 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
                     }
                   >
                     <div className="absolute inset-0">
-                          {/* Priority 1: Use direct video URLs with ArtPlayer */}
-                          {((isIndianPornHQ && videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
+                          {/* Priority 0: Use xHamster embed URL (best player) */}
+                          {(isIndianPornHQ && videoData.data?.xhamsterEmbedUrl) ? (
+                            // Use xHamster player via worker proxy - Direct iframe embed
+                            <>
+                              {iframeLoading && (
+                                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black">
+                                  <div className="text-center">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-500/20 border-t-purple-500 mx-auto mb-4"></div>
+                                    <p className="text-gray-400">Loading xHamster player...</p>
+                                  </div>
+                                </div>
+                              )}
+                              <iframe
+                                key={`xhamster-${id}`}
+                                src={videoData.data.xhamsterEmbedUrl}
+                                className="w-full h-full"
+                                frameBorder="0"
+                                allowFullScreen
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-pointer-lock"
+                                onError={(e) => {
+                                  console.error("[xHamster] iframe failed to load:", videoData.data?.xhamsterEmbedUrl)
+                                  setIframeLoading(false)
+                                }}
+                                onLoad={() => {
+                                  console.log("[xHamster] iframe loaded successfully:", videoData.data?.xhamsterEmbedUrl)
+                                  setIframeLoading(false)
+                                }}
+                              ></iframe>
+                            </>
+                          ) : ((isIndianPornHQ && (videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i) || videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i))) ||
                            (provider === 'fsiblog5' && videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
                            (provider === 'kamababa' && videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
                            (provider === 'webxseries' && videoData.data?.videoUrl?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i)) ||
                            (videoData.data?.video_url?.match(/\.(mp4|webm|ogg|avi|mov|m3u8)(\?|$)/i))) ? (
                             // Use ArtPlayer for direct video URLs
                             <ArtPlayer
+                              key={`artplayer-${id}-${videoData.data?.videoUrl || videoData.data?.video_url}`}
                               option={{
-                                // FSIBlog needs proxying through worker, but Kamababa and WebXSeries CDN URLs are direct
-                                url: provider === 'fsiblog5' && videoData.data.videoUrl
-                                  ? `https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.videoUrl)}`
-                                  : (videoData.data.videoUrl || videoData.data.video_url),
-                                // FSIBlog thumbnails need proxying, Kamababa and WebXSeries thumbnails are already direct/proxied
+                                // Use direct video URLs - CDNs typically support Range requests needed for seeking
+                                // FSIBlog CDN URLs don't need proxying for video playback
+                                url: videoData.data.videoUrl || videoData.data.video_url,
+                                // FSIBlog thumbnails still need proxying for CORS
                                 poster: provider === 'fsiblog5' && (videoData.data?.thumbnail || videoData.data?.thumbnail_url)
                                   ? `https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.thumbnail || videoData.data.thumbnail_url)}`
                                   : (videoData.data?.thumbnail || videoData.data?.thumbnail_url || ''),
@@ -707,15 +915,67 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
                                 theme: '#8b5cf6',
                                 lang: 'en',
                                 moreVideoAttr: {
-                                  // Only use crossOrigin for providers that properly support CORS
-                                  // FSIBlog, Kamababa, and WebXSeries don't need crossOrigin attribute
+                                  // Don't set crossOrigin for FSIBlog since we're using direct CDN URLs
+                                  // This allows the browser to handle Range requests natively
                                   ...(provider !== 'fsiblog5' && provider !== 'kamababa' && provider !== 'webxseries' && { crossOrigin: 'anonymous' }),
-                                  preload: 'metadata',
+                                  preload: 'auto', // Load more data for better seeking support
                                   style: 'width: 100%; height: 100%; object-fit: cover;',
                                 },
+                                // Add events to handle seek issues
+                                events: [
+                                  {
+                                    name: 'seeking',
+                                    handler: () => {
+                                      console.log('[ArtPlayer] Seeking...')
+                                    }
+                                  },
+                                  {
+                                    name: 'seeked',
+                                    handler: (event: any) => {
+                                      console.log('[ArtPlayer] Seeked to:', event?.target?.currentTime)
+                                    }
+                                  },
+                                  {
+                                    name: 'error',
+                                    handler: (error: any) => {
+                                      console.error('[ArtPlayer] Error:', error)
+                                    }
+                                  },
+                                  {
+                                    name: 'loadedmetadata',
+                                    handler: (event: any) => {
+                                      console.log('[ArtPlayer] Metadata loaded, duration:', event?.target?.duration)
+                                    }
+                                  }
+                                ]
                               }}
                               getInstance={(art) => {
                                 artPlayerRef.current = art
+                                
+                                // Add additional event handlers for debugging seek issues
+                                art.on('video:timeupdate', () => {
+                                  // This fires continuously during playback
+                                  // Only log if we detect a jump in time
+                                  if (art.video && art.video.currentTime > 0) {
+                                    const currentTime = art.video.currentTime
+                                    const lastTime = (art as any)._lastLoggedTime || 0
+                                    
+                                    // If time jumped backwards (possible seek reset issue)
+                                    if (currentTime < lastTime - 1) {
+                                      console.warn('[ArtPlayer] Time jumped backwards from', lastTime, 'to', currentTime)
+                                    }
+                                    
+                                    (art as any)._lastLoggedTime = currentTime
+                                  }
+                                })
+                                
+                                art.on('video:seeking', () => {
+                                  console.log('[ArtPlayer] User is seeking, current time:', art.currentTime)
+                                })
+                                
+                                art.on('video:seeked', () => {
+                                  console.log('[ArtPlayer] Seek completed, new time:', art.currentTime)
+                                })
                               }}
                               style={{
                                 width: '100%',
@@ -783,8 +1043,8 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
                                 }}
                               ></iframe>
                             </>
-                          ) : isIndianPornHQ && videoData.data?.embed_url ? (
-                            // Priority 3: Use Indian PornHQ embed URL (fallback)
+                          ) : isIndianPornHQ && (videoData.data?.embedUrl || videoData.data?.embed_url) ? (
+                            // Priority 3: Use Indian PornHQ embed URL with player proxy (fallback)
                             <>
                               {iframeLoading && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-black">
@@ -795,25 +1055,25 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
                                 </div>
                               )}
                               <iframe
-                                src={videoData.data.embed_url}
+                                src={`https://player.premiumhub.workers.dev/${encodeURIComponent(videoData.data.embedUrl || videoData.data.embed_url)}`}
                                 className="w-full h-full"
                                 frameBorder="0"
                                 allowFullScreen
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                 onError={(e) => {
-                                  console.error("Iframe failed to load:", videoData.data?.embed_url)
+                                  console.error("Iframe failed to load:", videoData.data?.embedUrl || videoData.data?.embed_url)
                                   setIframeLoading(false)
                                 }}
                                 onLoad={() => {
-                                  console.log("Iframe loaded successfully:", videoData.data?.embed_url)
+                                  console.log("Iframe loaded successfully:", videoData.data?.embedUrl || videoData.data?.embed_url)
                                   setIframeLoading(false)
                                 }}
                               ></iframe>
                             </>
-                          ) : isIndianPornHQ && videoData.data?.video_url ? (
-                            // Use video_url directly with player prefix (encode for query params)
+                          ) : isIndianPornHQ && (videoData.data?.videoUrl || videoData.data?.video_url) ? (
+                            // Use videoUrl directly with player prefix (encode for query params)
                             <iframe
-                              src={`https://player.premiumhub.workers.dev/${encodeURIComponent(videoData.data.video_url)}`}
+                              src={`https://player.premiumhub.workers.dev/${encodeURIComponent(videoData.data.videoUrl || videoData.data.video_url)}`}
                               className="w-full h-full"
                               frameBorder="0"
                               allowFullScreen
@@ -933,31 +1193,36 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
                         Related Videos ({videoData.data.relatedVideos.length})
                       </h2>
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {videoData.data.relatedVideos.map((relatedVideo: any) => (
-                          <Link
-                            key={relatedVideo.id}
-                            href={`/provider/${provider}/video/${relatedVideo.slug}${categorySlug ? `?cat=${categorySlug}` : ''}`}
-                            className="group block"
-                          >
-                            <div className="relative aspect-video rounded-xl overflow-hidden mb-2">
-                              <img
-                                src={relatedVideo.thumbnail || '/api/placeholder?height=180&width=320&query=video'}
-                                alt={relatedVideo.title}
-                                className="w-full h-full object-cover transition-all duration-300 group-hover:scale-110"
-                                loading="lazy"
-                              />
-                              {relatedVideo.duration && (
-                                <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-xs text-white font-medium">
-                                  {relatedVideo.duration}
-                                </div>
-                              )}
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                            </div>
-                            <h3 className="text-sm text-gray-300 group-hover:text-white font-medium line-clamp-2 transition-colors">
-                              {relatedVideo.title}
-                            </h3>
-                          </Link>
-                        ))}
+                        {videoData.data.relatedVideos.map((relatedVideo: any) => {
+                          // Determine if this is a gallery or video based on type
+                          const contentType = relatedVideo.type === 'sex-gallery' ? 'gallery' : 'video'
+                          
+                          return (
+                            <Link
+                              key={relatedVideo.id}
+                              href={`/provider/${provider}/${contentType}/${relatedVideo.slug}${categorySlug ? `?cat=${categorySlug}` : ''}`}
+                              className="group block"
+                            >
+                              <div className="relative aspect-video rounded-xl overflow-hidden mb-2">
+                                <img
+                                  src={relatedVideo.thumbnail || '/api/placeholder?height=180&width=320&query=video'}
+                                  alt={relatedVideo.title}
+                                  className="w-full h-full object-cover transition-all duration-300 group-hover:scale-110"
+                                  loading="lazy"
+                                />
+                                {relatedVideo.duration && (
+                                  <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 rounded text-xs text-white font-medium">
+                                    {relatedVideo.duration}
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                              </div>
+                              <h3 className="text-sm text-gray-300 group-hover:text-white font-medium line-clamp-2 transition-colors">
+                                {relatedVideo.title}
+                              </h3>
+                            </Link>
+                          )
+                        })}
                       </div>
                     </div>
                   )}
@@ -1022,7 +1287,7 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
           {/* Main image */}
           <div className="max-w-7xl max-h-[90vh] w-full h-full flex items-center justify-center p-4">
             <img
-              src={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.galleryImages[currentImageIndex])}`}
+              src={safeProxyImage(videoData.data.galleryImages[currentImageIndex])}
               alt={`Gallery image ${currentImageIndex + 1}`}
               className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
               onClick={(e) => e.stopPropagation()}
@@ -1050,7 +1315,7 @@ export default function ProviderVideoPage({ initialVideoData }: ProviderVideoPag
 
           {/* Download button */}
           <a
-            href={`https://fsiblog5.premiumhub.workers.dev/?url=${encodeURIComponent(videoData.data.galleryImages[currentImageIndex])}`}
+            href={safeProxyImage(videoData.data.galleryImages[currentImageIndex])}
             download
             target="_blank"
             rel="noopener noreferrer"

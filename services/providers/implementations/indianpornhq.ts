@@ -196,24 +196,32 @@ export class IndianPornHQProvider extends BaseProvider {
       }
       
       const videoIndex = parseInt(indexMatch[1], 10);
-      this.log(`Extracting video at index ${videoIndex}`);
+      this.log(`Extracting video at index ${videoIndex} from slug: ${slug}`);
       
       // Fetch videos list
       let videosResponse: ProviderResponse<UnifiedVideoData[]>;
       if (categorySlug) {
+        this.log(`Fetching videos from category: ${categorySlug}`);
         videosResponse = await this.fetchCategoryVideos({ categorySlug });
       } else {
+        this.log(`Fetching videos from homepage`);
         videosResponse = await this.fetchVideos({});
       }
       
       if (!videosResponse.success || !videosResponse.data) {
+        this.log(`[getVideoDetails] Failed to fetch videos list`);
         return this.createErrorResponse('Failed to fetch video list');
       }
       
+      this.log(`[getVideoDetails] Got ${videosResponse.data.length} videos, looking for index ${videoIndex}`);
+      
       const video = videosResponse.data[videoIndex];
       if (!video) {
+        this.log(`[getVideoDetails] Video not found at index ${videoIndex}. Available indices: 0-${videosResponse.data.length - 1}`);
         return this.createErrorResponse('Video not found at index');
       }
+      
+      this.log(`[getVideoDetails] Found video at index ${videoIndex}: ${video.title}`);
       
       // If we have a video URL, fetch detailed information
       if (video.postUrl) {
@@ -238,6 +246,9 @@ export class IndianPornHQProvider extends BaseProvider {
               tags: details.tags || [],
               uploadDate: details.upload_date,
             };
+            
+            this.log(`[getVideoDetails] Tags from scraper: ${details.tags?.length || 0} tags - ${details.tags?.join(', ') || 'none'}`);
+            this.log(`[getVideoDetails] Merged detailedVideo.tags: ${detailedVideo.tags?.length || 0} tags - ${detailedVideo.tags?.join(', ') || 'none'}`);
             
             // Cache the result
             await providerCache.set(
